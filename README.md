@@ -10,40 +10,47 @@ colcon build --packages-select crazy_controller
 source install/setup.bash
 
 # Real hardware
-ros2 launch crazy_controller controller_launch.py
+ros2 launch crazy_controller controller_launch.py mod:=real
 
-# Simulation
-ros2 launch crazy_controller controller_launch.py sim_mode:=true
+# Simulation (using simulator odometry)
+ros2 launch crazy_controller controller_launch.py mod:=sim
 
-# Simulation with PF odometry
-ros2 launch crazy_controller controller_launch.py sim_mode:=true odom_mode:=pf
+# Simulation with MCL (using particle filter localization)
+ros2 launch crazy_controller controller_launch.py mod:=sim_pf
 ```
 
 ## Launch Parameters
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `sim_mode` | `false` | Use simulation topics if true |
-| `odom_mode` | `ego` | Odometry mode: `ego` (/ego_racecar/odom) or `pf` (/pf/pose/odom) |
-| `mode` | `MAP` | Control algorithm (MAP only) |
+| `mod` | `real` | Launch mode: `real`, `sim`, or `sim_pf` |
+| `controller_mode` | `MAP` | Control algorithm (MAP only) |
 | `l1_params_path` | Auto-selected | L1 parameter file by mode |
 | `lookup_table_path` | Auto-selected | Steering lookup table by mode |
 
 ## Topics
 
-### Real Hardware Mode
-- **Input**: `/pf/pose/odom`, `/car_state/frenet/odom` - Pose and Frenet state
+### Real Mode (`mod:=real`)
+- **Input**: `/pf/pose/odom`, `/car_state/frenet/odom` - MCL pose and Frenet state
 - **Input**: `/global_waypoints`, `/local_waypoints` - Track and path data
 - **Output**: `/drive` - Ackermann drive commands
+- **Timing**: Real time
 
-### Simulation Mode
-- **Input**: `/ego_racecar/odom` (default) or `/pf/pose/odom` (with `odom_mode:=pf`), `/car_state/frenet/odom` - Simulation pose data
+### Simulation Mode (`mod:=sim`)
+- **Input**: `/ego_racecar/odom`, `/car_state/frenet/odom` - Direct simulator odometry and Frenet state
 - **Input**: `/global_waypoints`, `/local_waypoints` - Track and path data
 - **Output**: `/drive` - Ackermann drive commands
+- **Timing**: Simulation time
+
+### Simulation + MCL Mode (`mod:=sim_pf`)
+- **Input**: `/pf/pose/odom`, `/car_state/frenet/odom` - MCL localization in simulation and Frenet state
+- **Input**: `/global_waypoints`, `/local_waypoints` - Track and path data
+- **Output**: `/drive` - Ackermann drive commands
+- **Timing**: Simulation time
 
 ## Key Configuration
 
-Edit `config/l1_params.yaml` (real) or `config/l1_params_sim.yaml` (simulation):
+Edit `config/l1_params.yaml` (real) or `config/l1_params_sim.yaml` (sim/sim_pf):
 
 ```yaml
 crazy_controller:
@@ -57,9 +64,9 @@ crazy_controller:
     speed_lookahead: 0.25         # Speed-based lookahead
     acc_scaler_for_steer: 1.2     # Steering scaling factors
     
-    # Vehicle parameters (auto-set by sim_mode)
+    # Vehicle parameters (auto-set by mod)
     # Real: Pacejka tire model, wheelbase=0.325
-    # Sim: Linear tire model, wheelbase=0.324
+    # Sim/Sim_pf: Linear tire model, wheelbase=0.324
 ```
 
 ## Control Algorithm
