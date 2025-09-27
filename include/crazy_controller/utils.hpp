@@ -90,8 +90,7 @@ public:
         const Eigen::MatrixXd& waypoint_array_in_map,
         double speed_now,
         const Eigen::Vector2d& position_in_map_frenet,
-        const Eigen::VectorXd& acc_now,
-        double track_length);
+        const Eigen::VectorXd& acc_now);
 
     // Parameter setters (inline implementations)
     void set_t_clip_min(double v) { t_clip_min_ = v; }
@@ -148,7 +147,6 @@ private:
     double speed_now_;
     Eigen::Vector2d position_in_map_frenet_;
     Eigen::VectorXd acc_now_;
-    double track_length_;
     std::optional<double> speed_command_;
     std::optional<int> idx_nearest_waypoint_;
     double curvature_waypoints_;

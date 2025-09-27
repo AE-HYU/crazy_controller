@@ -310,15 +310,13 @@ MAPResult MAP_Controller::main_loop(
     const Eigen::MatrixXd& waypoint_array_in_map,
     double speed_now,
     const Eigen::Vector2d& position_in_map_frenet,
-    const Eigen::VectorXd& acc_now,
-    double track_length)
+    const Eigen::VectorXd& acc_now)
 {
   position_in_map_ = position_in_map;
   waypoint_array_in_map_ = waypoint_array_in_map;
   speed_now_ = speed_now;
   position_in_map_frenet_ = position_in_map_frenet;
   acc_now_ = acc_now;
-  track_length_ = track_length;
 
   const double yaw = position_in_map_(2);
   Eigen::Vector2d v(std::cos(yaw) * speed_now_, std::sin(yaw) * speed_now_);
@@ -368,9 +366,9 @@ double MAP_Controller::calc_steering_angle(const Eigen::Vector2d& L1_point,
       position_in_map_(1) + v(1) * adv_ts_st);
 
   const int idx_la_steer =
-      nearest_waypoint(la_position, waypoint_array_in_map_.leftCols<2>());
+      nearest_waypoint(la_position, waypoint_array_in_map_.block(0, 1, waypoint_array_in_map_.rows(), 2));
 
-  const double speed_la_for_lu = waypoint_array_in_map_(idx_la_steer, 2);
+  const double speed_la_for_lu = waypoint_array_in_map_(idx_la_steer, 5); // vx_mps
   const double speed_for_lu = speed_adjust_lat_err(speed_la_for_lu, lat_e_norm);
 
   Eigen::Vector2d L1_vector(L1_point.x() - position_in_map_(0),
@@ -425,7 +423,7 @@ double MAP_Controller::calc_steering_angle(const Eigen::Vector2d& L1_point,
 
 std::pair<Eigen::Vector2d, double> MAP_Controller::calc_L1_point(double lateral_error) {
   idx_nearest_waypoint_ =
-      nearest_waypoint(position_in_map_.head<2>(), waypoint_array_in_map_.leftCols<2>());
+      nearest_waypoint(position_in_map_.head<2>(), waypoint_array_in_map_.block(0, 1, waypoint_array_in_map_.rows(), 2));
 
   if (!idx_nearest_waypoint_.has_value()) {
     idx_nearest_waypoint_ = 0;
@@ -433,7 +431,7 @@ std::pair<Eigen::Vector2d, double> MAP_Controller::calc_L1_point(double lateral_
 
   if ((waypoint_array_in_map_.rows() - idx_nearest_waypoint_.value()) > 2) {
     curvature_waypoints_ =
-        (waypoint_array_in_map_.block(idx_nearest_waypoint_.value(), 5,
+        (waypoint_array_in_map_.block(idx_nearest_waypoint_.value(), 4, // kappa_radpm
                                       waypoint_array_in_map_.rows() - idx_nearest_waypoint_.value(), 1)
          .cwiseAbs().mean());
   }
@@ -452,7 +450,7 @@ std::pair<Eigen::Vector2d, double> MAP_Controller::calc_L1_point(double lateral_
 
   Eigen::Vector2d L1_point =
       waypoint_at_distance_before_car(L1_distance,
-                                      waypoint_array_in_map_.leftCols<2>(),
+                                      waypoint_array_in_map_.block(0, 1, waypoint_array_in_map_.rows(), 2), // x_m, y_m
                                       idx_nearest_waypoint_.value());
   return {L1_point, L1_distance};
 }
@@ -460,15 +458,15 @@ std::pair<Eigen::Vector2d, double> MAP_Controller::calc_L1_point(double lateral_
 std::optional<double> MAP_Controller::calc_speed_command(const Eigen::Vector2d& v,
                                                          double lat_e_norm)
 {
-  const double adv_ts_sp = speed_lookahead_;
+  const double adv_ts_sp = speed_lookahead_; // lookahead_time
   Eigen::Vector2d la_position(
       position_in_map_(0) + v(0) * adv_ts_sp,
       position_in_map_(1) + v(1) * adv_ts_sp);
 
   const int idx_la_position =
-      nearest_waypoint(la_position, waypoint_array_in_map_.leftCols<2>());
+      nearest_waypoint(la_position, waypoint_array_in_map_.block(0, 1, waypoint_array_in_map_.rows(), 2));
 
-  double global_speed = waypoint_array_in_map_(idx_la_position, 2);
+  double global_speed = waypoint_array_in_map_(idx_la_position, 5); // vx_mps
   global_speed = speed_adjust_lat_err(global_speed, lat_e_norm);
   return global_speed;
 }

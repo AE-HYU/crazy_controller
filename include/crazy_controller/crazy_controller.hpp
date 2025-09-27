@@ -41,7 +41,6 @@ private:
     void declare_l1_dynamic_parameters_from_yaml(const std::string& yaml_path);
 
     // Callback functions
-    void track_length_cb(const ae_hyu_msgs::msg::WpntArray::SharedPtr msg);
     void local_waypoint_cb(const ae_hyu_msgs::msg::WpntArray::SharedPtr msg);
     void car_state_cb(const nav_msgs::msg::Odometry::SharedPtr msg);
     void car_state_frenet_cb(const nav_msgs::msg::Odometry::SharedPtr msg);
@@ -54,7 +53,6 @@ private:
 
     // ROS publishers and subscribers
     rclcpp::Publisher<ackermann_msgs::msg::AckermannDriveStamped>::SharedPtr drive_pub_;
-    rclcpp::Subscription<ae_hyu_msgs::msg::WpntArray>::SharedPtr sub_track_length_;
     rclcpp::Subscription<ae_hyu_msgs::msg::WpntArray>::SharedPtr sub_local_waypoints_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_car_state_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_car_state_frenet_;
@@ -68,7 +66,6 @@ private:
     std::shared_ptr<rclcpp::ParameterEventCallbackHandle> callback_handle_;
 
     // State variables
-    std::optional<double> track_length_;
     std::optional<double> speed_now_;
     std::optional<Eigen::RowVector3d> position_in_map_;
     std::optional<Eigen::Vector4d> position_in_map_frenet_;
