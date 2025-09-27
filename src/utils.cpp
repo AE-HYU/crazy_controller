@@ -238,27 +238,6 @@ double SteeringLookup::lookup_steer_angle(double accel, double vel) const {
     return pimpl_->lookup_->lookup_steer_angle(accel, vel);
 }
 
-// Utility functions
-int nearest_waypoint(const Eigen::Vector2d& position, const Eigen::MatrixXd& waypoints) {
-    if (waypoints.rows() == 0) return -1;
-
-    double min_dist = std::numeric_limits<double>::max();
-    int nearest_idx = 0;
-
-    for (int i = 0; i < waypoints.rows(); ++i) {
-        double dx = waypoints(i, 0) - position(0);
-        double dy = waypoints(i, 1) - position(1);
-        double dist = dx * dx + dy * dy;
-
-        if (dist < min_dist) {
-            min_dist = dist;
-            nearest_idx = i;
-        }
-    }
-
-    return nearest_idx;
-}
-
 } // namespace utils
 
 // MAP Controller implementation
@@ -469,20 +448,6 @@ std::optional<double> MAP_Controller::calc_speed_command(double lat_e_norm)
   double global_speed = waypoint_array_in_map_(idx_la_position, 5); // vx_mps
   global_speed = speed_adjust_lat_err(global_speed, lat_e_norm);
   return global_speed;
-}
-
-double MAP_Controller::distance(const Eigen::Vector2d& p1, const Eigen::Vector2d& p2) {
-  return (p2 - p1).norm();
-}
-
-double MAP_Controller::acc_scaling(double steer) const {
-  const double mean_acc = (acc_now_.size() > 0) ? acc_now_.mean() : 0.0;
-  if (mean_acc >= 1.0) {
-    return steer * acc_scaler_for_steer_;
-  } else if (mean_acc <= -1.0) {
-    return steer * dec_scaler_for_steer_;
-  }
-  return steer;
 }
 
 double MAP_Controller::speed_steer_scaling(double steer, double speed) const {

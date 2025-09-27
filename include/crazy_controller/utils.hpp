@@ -47,9 +47,6 @@ constexpr T clamp(const T& v, const T& lo, const T& hi) {
     return (v < lo) ? lo : (hi < v) ? hi : v;
 }
 
-// Geometry utilities
-int nearest_waypoint(const Eigen::Vector2d& position, const Eigen::MatrixXd& waypoints);
-
 } // namespace utils
 
 // MAP Controller types and class
@@ -116,8 +113,6 @@ private:
     std::optional<double> calc_speed_command(double lat_e_norm);
     std::pair<double, double> calc_lateral_error_norm() const;
     double speed_adjust_lat_err(double global_speed, double lat_e_norm) const;
-    double distance(const Eigen::Vector2d& p1, const Eigen::Vector2d& p2);
-    double acc_scaling(double steer) const;
     double speed_steer_scaling(double steer, double speed) const;
     int nearest_waypoint(const Eigen::Vector2d& position, const Eigen::MatrixXd& waypoints_xy) const;
     int find_waypoint_by_s(double target_s) const;
