@@ -89,7 +89,7 @@ public:
         const Eigen::RowVector3d& position_in_map,
         const Eigen::MatrixXd& waypoint_array_in_map,
         double speed_now,
-        const Eigen::Vector2d& position_in_map_frenet,
+        const Eigen::Vector4d& position_in_map_frenet,
         const Eigen::VectorXd& acc_now);
 
     // Parameter setters (inline implementations)
@@ -111,16 +111,16 @@ private:
     double calc_steering_angle(const Eigen::Vector2d& L1_point,
                                double L1_distance,
                                double yaw,
-                               double lat_e_norm,
-                               const Eigen::Vector2d& v);
+                               double lat_e_norm);
     std::pair<Eigen::Vector2d, double> calc_L1_point(double lateral_error);
-    std::optional<double> calc_speed_command(const Eigen::Vector2d& v, double lat_e_norm);
+    std::optional<double> calc_speed_command(double lat_e_norm);
     std::pair<double, double> calc_lateral_error_norm() const;
     double speed_adjust_lat_err(double global_speed, double lat_e_norm) const;
     double distance(const Eigen::Vector2d& p1, const Eigen::Vector2d& p2);
     double acc_scaling(double steer) const;
     double speed_steer_scaling(double steer, double speed) const;
     int nearest_waypoint(const Eigen::Vector2d& position, const Eigen::MatrixXd& waypoints_xy) const;
+    int find_waypoint_by_s(double target_s) const;
     Eigen::Vector2d waypoint_at_distance_before_car(double distance,
                                                     const Eigen::MatrixXd& waypoints_xy,
                                                     int idx_waypoint_behind_car) const;
@@ -145,7 +145,7 @@ private:
     Eigen::RowVector3d position_in_map_;
     Eigen::MatrixXd waypoint_array_in_map_;
     double speed_now_;
-    Eigen::Vector2d position_in_map_frenet_;
+    Eigen::Vector4d position_in_map_frenet_;  // Changed from Vector2d to Vector4d
     Eigen::VectorXd acc_now_;
     std::optional<double> speed_command_;
     std::optional<int> idx_nearest_waypoint_;

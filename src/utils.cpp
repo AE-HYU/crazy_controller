@@ -309,7 +309,7 @@ MAPResult MAP_Controller::main_loop(
     const Eigen::RowVector3d& position_in_map,
     const Eigen::MatrixXd& waypoint_array_in_map,
     double speed_now,
-    const Eigen::Vector2d& position_in_map_frenet,
+    const Eigen::Vector4d& position_in_map_frenet,
     const Eigen::VectorXd& acc_now)
 {
   position_in_map_ = position_in_map;
@@ -323,7 +323,7 @@ MAPResult MAP_Controller::main_loop(
 
   auto [lat_e_norm, lateral_error] = calc_lateral_error_norm();
 
-  speed_command_ = calc_speed_command(v, lat_e_norm);
+  speed_command_ = calc_speed_command(lat_e_norm);
 
   double speed = 0.0, acceleration = 0.0, jerk = 0.0;
   if (speed_command_.has_value()) {
@@ -341,7 +341,7 @@ MAPResult MAP_Controller::main_loop(
     throw std::runtime_error("L1_point is invalid");
   }
 
-  double steering_angle = calc_steering_angle(L1_point, L1_distance, yaw, lat_e_norm, v);
+  double steering_angle = calc_steering_angle(L1_point, L1_distance, yaw, lat_e_norm);
 
   MAPResult out;
   out.speed = speed;
@@ -357,16 +357,16 @@ MAPResult MAP_Controller::main_loop(
 double MAP_Controller::calc_steering_angle(const Eigen::Vector2d& L1_point,
                                            double L1_distance,
                                            double yaw,
-                                           double lat_e_norm,
-                                           const Eigen::Vector2d& v)
+                                           double lat_e_norm)
 {
   const double adv_ts_st = speed_lookahead_for_steer_;
-  Eigen::Vector2d la_position(
-      position_in_map_(0) + v(0) * adv_ts_st,
-      position_in_map_(1) + v(1) * adv_ts_st);
+  
+  // Use Frenet coordinate for more efficient lookahead
+  const double current_s = position_in_map_frenet_(0);  // current s
+  const double vs = position_in_map_frenet_(2);         // longitudinal velocity in Frenet
+  const double future_s = current_s + vs * adv_ts_st;  // lookahead s position
 
-  const int idx_la_steer =
-      nearest_waypoint(la_position, waypoint_array_in_map_.block(0, 1, waypoint_array_in_map_.rows(), 2));
+  const int idx_la_steer = find_waypoint_by_s(future_s);
 
   const double speed_la_for_lu = waypoint_array_in_map_(idx_la_steer, 5); // vx_mps
   const double speed_for_lu = speed_adjust_lat_err(speed_la_for_lu, lat_e_norm);
@@ -455,16 +455,16 @@ std::pair<Eigen::Vector2d, double> MAP_Controller::calc_L1_point(double lateral_
   return {L1_point, L1_distance};
 }
 
-std::optional<double> MAP_Controller::calc_speed_command(const Eigen::Vector2d& v,
-                                                         double lat_e_norm)
+std::optional<double> MAP_Controller::calc_speed_command(double lat_e_norm)
 {
   const double adv_ts_sp = speed_lookahead_; // lookahead_time
-  Eigen::Vector2d la_position(
-      position_in_map_(0) + v(0) * adv_ts_sp,
-      position_in_map_(1) + v(1) * adv_ts_sp);
+  
+  // Use Frenet coordinate for more efficient lookahead
+  const double current_s = position_in_map_frenet_(0);  // current s
+  const double vs = position_in_map_frenet_(2);         // longitudinal velocity in Frenet
+  const double future_s = current_s + vs * adv_ts_sp;  // lookahead s position
 
-  const int idx_la_position =
-      nearest_waypoint(la_position, waypoint_array_in_map_.block(0, 1, waypoint_array_in_map_.rows(), 2));
+  const int idx_la_position = find_waypoint_by_s(future_s);
 
   double global_speed = waypoint_array_in_map_(idx_la_position, 5); // vx_mps
   global_speed = speed_adjust_lat_err(global_speed, lat_e_norm);
@@ -526,6 +526,29 @@ int MAP_Controller::nearest_waypoint(const Eigen::Vector2d& position,
       best_idx = static_cast<int>(i);
     }
   }
+  return best_idx;
+}
+
+int MAP_Controller::find_waypoint_by_s(double target_s) const
+{
+  const Eigen::Index N = waypoint_array_in_map_.rows();
+  if (N <= 0) return 0;
+  
+  // Binary search would be more efficient for large datasets, 
+  // but linear search is simpler and fine for typical waypoint counts
+  double best_distance = std::numeric_limits<double>::max();
+  int best_idx = 0;
+  
+  for (Eigen::Index i = 0; i < N; ++i) {
+    const double waypoint_s = waypoint_array_in_map_(i, 0); // s_m is at index 0
+    const double distance = std::abs(waypoint_s - target_s);
+    
+    if (distance < best_distance) {
+      best_distance = distance;
+      best_idx = static_cast<int>(i);
+    }
+  }
+  
   return best_idx;
 }
 

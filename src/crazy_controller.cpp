@@ -236,7 +236,7 @@ std::pair<double,double> Controller::map_cycle() {
         position_in_map_.value(),
         waypoint_array_in_map_,
         speed_now_.value(),
-        Eigen::Vector2d(position_in_map_frenet_.value()(0), position_in_map_frenet_.value()(1)),
+        position_in_map_frenet_.value(),  // Vector4d 전체를 전달
         acc_now_);
 
     waypoint_safety_counter_ += 1;
