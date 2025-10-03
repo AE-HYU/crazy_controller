@@ -9,48 +9,44 @@ MAP (Model-based Adaptive Pursuit) controller for F1TENTH with safety features a
 colcon build --packages-select crazy_controller
 source install/setup.bash
 
-# Real hardware
+# Real hardware (TF map->base_link + /odom)
 ros2 launch crazy_controller controller_launch.py mod:=real
 
-# Simulation (using simulator odometry)
+# Simulation (TF map->ego_racecar/base_link + /ego_racecar/odom)
 ros2 launch crazy_controller controller_launch.py mod:=sim
-
-# Simulation with MCL (using particle filter localization)
-ros2 launch crazy_controller controller_launch.py mod:=sim_pf
 ```
 
 ## Launch Parameters
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `mod` | `real` | Launch mode: `real`, `sim`, or `sim_pf` |
+| `mod` | `real` | Launch mode: `real` or `sim` |
 | `controller_mode` | `MAP` | Control algorithm (MAP only) |
 | `l1_params_path` | Auto-selected | L1 parameter file by mode |
 | `lookup_table_path` | Auto-selected | Steering lookup table by mode |
+| `base_link_frame` | Auto-selected | TF frame: `base_link` (real) or `ego_racecar/base_link` (sim) |
 
 ## Topics
 
 ### Real Mode (`mod:=real`)
-- **Input**: `/pf/pose/odom`, `/car_state/frenet/odom` - MCL pose and Frenet state
+- **Input**: `/odom` - Odometry (velocity only)
+- **Input**: TF `map` → `base_link` - Position and orientation from TF transforms
+- **Input**: `/car_state/frenet/odom` - Frenet state
 - **Input**: `/global_waypoints`, `/local_waypoints` - Track and path data
 - **Output**: `/drive` - Ackermann drive commands
-- **Timing**: Real time
+- **Config**: Real-time, Pacejka tire model, `l1_params.yaml`
 
 ### Simulation Mode (`mod:=sim`)
-- **Input**: `/ego_racecar/odom`, `/car_state/frenet/odom` - Direct simulator odometry and Frenet state
+- **Input**: `/ego_racecar/odom` - Odometry (velocity only)
+- **Input**: TF `map` → `ego_racecar/base_link` - Position and orientation from TF transforms
+- **Input**: `/car_state/frenet/odom` - Frenet state
 - **Input**: `/global_waypoints`, `/local_waypoints` - Track and path data
 - **Output**: `/drive` - Ackermann drive commands
-- **Timing**: Simulation time
-
-### Simulation + MCL Mode (`mod:=sim_pf`)
-- **Input**: `/pf/pose/odom`, `/car_state/frenet/odom` - MCL localization in simulation and Frenet state
-- **Input**: `/global_waypoints`, `/local_waypoints` - Track and path data
-- **Output**: `/drive` - Ackermann drive commands
-- **Timing**: Simulation time
+- **Config**: Simulation time, Linear tire model, `l1_params_sim.yaml`
 
 ## Key Configuration
 
-Edit `config/l1_params.yaml` (real) or `config/l1_params_sim.yaml` (sim/sim_pf):
+Edit `config/l1_params.yaml` (real) or `config/l1_params_sim.yaml` (sim):
 
 ```yaml
 crazy_controller:
@@ -66,12 +62,13 @@ crazy_controller:
     
     # Vehicle parameters (auto-set by mod)
     # Real: Pacejka tire model, wheelbase=0.325
-    # Sim/Sim_pf: Linear tire model, wheelbase=0.324
+    # Sim: Linear tire model, wheelbase=0.324
 ```
 
 ## Control Algorithm
 
 MAP controller with multi-stage pipeline:
+- **TF-based localization**: Gets position/orientation from TF transforms (`map` → `base_link_frame`)
 - **Message synchronization**: Waits for all required topics with timeout
 - **L1 adaptive guidance**: Dynamic lookahead based on speed and curvature
 - **Speed planning**: Curvature-aware velocity with acceleration scaling
@@ -97,5 +94,6 @@ ros2 param set /controller_manager acc_scaler_for_steer 1.1
 ## Prerequisites
 
 - Lattice planner running
-- Monte Carlo Localization (real hardware)
+- TF transforms: `map` → `base_link` (real) or `map` → `ego_racecar/base_link` (sim)
+- Frenet coordinate transformer
 - Steering lookup table files loaded

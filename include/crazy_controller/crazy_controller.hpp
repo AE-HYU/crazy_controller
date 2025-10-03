@@ -5,6 +5,9 @@
 #include <ae_hyu_msgs/msg/wpnt_array.hpp>
 #include <nav_msgs/msg/odometry.hpp>
 #include <rcl_interfaces/msg/parameter_event.hpp>
+#include <tf2_ros/buffer.h>
+#include <tf2_ros/transform_listener.h>
+#include <geometry_msgs/msg/transform_stamped.hpp>
 
 #include <Eigen/Dense>
 #include <optional>
@@ -51,6 +54,8 @@ private:
     int rate_ = 40;
     std::string LUT_path_;
     std::string mode_;
+    std::string map_frame_ = "map";
+    std::string base_link_frame_ = "base_link";
 
     // ROS publishers and subscribers
     rclcpp::Publisher<ackermann_msgs::msg::AckermannDriveStamped>::SharedPtr drive_pub_;
@@ -58,6 +63,10 @@ private:
     rclcpp::Subscription<ae_hyu_msgs::msg::WpntArray>::SharedPtr sub_local_waypoints_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_car_state_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_car_state_frenet_;
+
+    // TF
+    std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
+    std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 
     // Timers
     rclcpp::TimerBase::SharedPtr timer_;

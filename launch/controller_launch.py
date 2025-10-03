@@ -17,25 +17,34 @@ def generate_launch_description():
     mod_arg = DeclareLaunchArgument(
         'mod',
         default_value='real',
-        description='Launch mode: real (use /pf/pose/odom), sim (use /ego_racecar/odom), sim_pf (use /pf/pose/odom)'
+        description='Launch mode: real (TF map->base_link + /odom), sim (TF map->ego_racecar/base_link + /ego_racecar/odom)'
     )
 
     # Dynamic parameter paths based on mod
     l1_params_path = PythonExpression([
-        "'", FindPackageShare('crazy_controller'), "/config/l1_params_sim.yaml' if '", 
-        LaunchConfiguration('mod'), "' in ['sim', 'sim_pf'] else '",
+        "'", FindPackageShare('crazy_controller'), "/config/l1_params_sim.yaml' if '",
+        LaunchConfiguration('mod'), "' == 'sim' else '",
         FindPackageShare('crazy_controller'), "/config/l1_params.yaml'"
     ])
-    
+
     lookup_table_path = PythonExpression([
-        "'", FindPackageShare('crazy_controller'), "/config/SIM_linear_lookup_table.csv' if '", 
-        LaunchConfiguration('mod'), "' in ['sim', 'sim_pf'] else '",
+        "'", FindPackageShare('crazy_controller'), "/config/SIM_linear_lookup_table.csv' if '",
+        LaunchConfiguration('mod'), "' == 'sim' else '",
         FindPackageShare('crazy_controller'), "/config/RBC1_pacejka_lookup_table.csv'"
     ])
 
     # Dynamic odom topic based on mod
     odom_topic = PythonExpression([
-        "'/ego_racecar/odom' if '", LaunchConfiguration('mod'), "' == 'sim' else '/pf/pose/odom'"
+        "'/ego_racecar/odom' if '", LaunchConfiguration('mod'), "' == 'sim' else '/odom'"
+    ])
+
+    # Dynamic TF map and base_link frames based on mod
+    map_frame = PythonExpression([
+        "'mcl_map' if '", LaunchConfiguration('mod'), "' == 'sim' else 'map'"
+    ])
+
+    base_link_frame = PythonExpression([
+        "'ego_racecar/base_link' if '", LaunchConfiguration('mod'), "' == 'sim' else 'base_link'"
     ])
 
     # Controller node
@@ -48,8 +57,10 @@ def generate_launch_description():
             'mode': LaunchConfiguration('controller_mode'),
             'l1_params_path': l1_params_path,
             'lookup_table_path': lookup_table_path,
+            'map_frame': map_frame,
+            'base_link_frame': base_link_frame,
             'use_sim_time': PythonExpression([
-                "'true' if '", LaunchConfiguration('mod'), "' in ['sim', 'sim_pf'] else 'false'"
+                "'true' if '", LaunchConfiguration('mod'), "' == 'sim' else 'false'"
             ])
         }],
         remappings=[

@@ -41,7 +41,21 @@ bool Controller::initialize() {
     // Get essential parameters
     LUT_path_ = this->get_parameter("lookup_table_path").as_string();
     mode_ = this->get_parameter("mode").as_string();
+
+    // Get TF frame parameters
+    if (this->has_parameter("map_frame")) {
+        map_frame_ = this->get_parameter("map_frame").as_string();
+    }
+    if (this->has_parameter("base_link_frame")) {
+        base_link_frame_ = this->get_parameter("base_link_frame").as_string();
+    }
+
     RCLCPP_INFO(this->get_logger(), "Using lookup table: %s", LUT_path_.c_str());
+    RCLCPP_INFO(this->get_logger(), "Using TF: %s -> %s", map_frame_.c_str(), base_link_frame_.c_str());
+
+    // Initialize TF
+    tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
+    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
     // Initialize publishers
     drive_pub_ = this->create_publisher<AckermannDriveStamped>("/drive", 10);
@@ -287,18 +301,38 @@ void Controller::local_waypoint_cb(const WpntArray::SharedPtr msg) {
 }
 
 void Controller::car_state_cb(const Odometry::SharedPtr msg) {
+    // Get velocity from odom message
     speed_now_ = msg->twist.twist.linear.x;
 
-    const auto & p = msg->pose.pose.position;
-    const auto & q = msg->pose.pose.orientation;
+    // Get position and orientation from TF (map_frame_ -> base_link_frame_)
+    try {
+        auto transform = tf_buffer_->lookupTransform(
+            map_frame_, base_link_frame_,
+            tf2::TimePointZero  // Get latest available transform
+        );
 
-    tf2::Quaternion quat(q.x, q.y, q.z, q.w);
-    double roll, pitch, yaw;
-    tf2::Matrix3x3(quat).getRPY(roll, pitch, yaw);
+        // Extract position
+        double x = transform.transform.translation.x;
+        double y = transform.transform.translation.y;
 
-    Eigen::RowVector3d pose;
-    pose << p.x, p.y, yaw;
-    position_in_map_ = pose;
+        // Extract orientation (yaw)
+        tf2::Quaternion q(
+            transform.transform.rotation.x,
+            transform.transform.rotation.y,
+            transform.transform.rotation.z,
+            transform.transform.rotation.w
+        );
+        double roll, pitch, yaw;
+        tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
+
+        Eigen::RowVector3d pose;
+        pose << x, y, yaw;
+        position_in_map_ = pose;
+
+    } catch (const tf2::TransformException & ex) {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                            "Could not get %s->%s transform: %s", map_frame_.c_str(), base_link_frame_.c_str(), ex.what());
+    }
 }
 
 void Controller::car_state_frenet_cb(const Odometry::SharedPtr msg) {
