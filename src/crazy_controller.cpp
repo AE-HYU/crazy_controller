@@ -304,26 +304,47 @@ void Controller::car_state_cb(const Odometry::SharedPtr msg) {
     // Get velocity from odom message
     speed_now_ = msg->twist.twist.linear.x;
 
-    // Get position and orientation from TF (map_frame_ -> base_link_frame_)
+    // Get position and orientation from TF (manually compose map->odom * odom->base_link)
     try {
-        auto transform = tf_buffer_->lookupTransform(
-            map_frame_, base_link_frame_,
-            tf2::TimePointZero  // Get latest available transform
-        );
+        // Get both transforms separately with TimePointZero
+        auto map_to_odom = tf_buffer_->lookupTransform("map", "odom", tf2::TimePointZero);
+        auto odom_to_base = tf_buffer_->lookupTransform("odom", base_link_frame_, tf2::TimePointZero);
 
-        // Extract position
-        double x = transform.transform.translation.x;
-        double y = transform.transform.translation.y;
-
-        // Extract orientation (yaw)
-        tf2::Quaternion q(
-            transform.transform.rotation.x,
-            transform.transform.rotation.y,
-            transform.transform.rotation.z,
-            transform.transform.rotation.w
+        // Extract map->odom transform
+        double map_odom_x = map_to_odom.transform.translation.x;
+        double map_odom_y = map_to_odom.transform.translation.y;
+        tf2::Quaternion q_map_odom(
+            map_to_odom.transform.rotation.x,
+            map_to_odom.transform.rotation.y,
+            map_to_odom.transform.rotation.z,
+            map_to_odom.transform.rotation.w
         );
-        double roll, pitch, yaw;
-        tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
+        double roll_mo, pitch_mo, yaw_map_odom;
+        tf2::Matrix3x3(q_map_odom).getRPY(roll_mo, pitch_mo, yaw_map_odom);
+
+        // Extract odom->base_link transform
+        double odom_base_x = odom_to_base.transform.translation.x;
+        double odom_base_y = odom_to_base.transform.translation.y;
+        tf2::Quaternion q_odom_base(
+            odom_to_base.transform.rotation.x,
+            odom_to_base.transform.rotation.y,
+            odom_to_base.transform.rotation.z,
+            odom_to_base.transform.rotation.w
+        );
+        double roll_ob, pitch_ob, yaw_odom_base;
+        tf2::Matrix3x3(q_odom_base).getRPY(roll_ob, pitch_ob, yaw_odom_base);
+
+        // Manual transform composition: map->base_link = map->odom * odom->base_link
+        double cos_map_odom = cos(yaw_map_odom);
+        double sin_map_odom = sin(yaw_map_odom);
+
+        double x = map_odom_x + cos_map_odom * odom_base_x - sin_map_odom * odom_base_y;
+        double y = map_odom_y + sin_map_odom * odom_base_x + cos_map_odom * odom_base_y;
+        double yaw = yaw_map_odom + yaw_odom_base;
+
+        // Normalize yaw to [-pi, pi]
+        while (yaw > M_PI) yaw -= 2.0 * M_PI;
+        while (yaw < -M_PI) yaw += 2.0 * M_PI;
 
         Eigen::RowVector3d pose;
         pose << x, y, yaw;
@@ -331,7 +352,7 @@ void Controller::car_state_cb(const Odometry::SharedPtr msg) {
 
     } catch (const tf2::TransformException & ex) {
         RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
-                            "Could not get %s->%s transform: %s", map_frame_.c_str(), base_link_frame_.c_str(), ex.what());
+                            "Could not get TF transforms: %s", ex.what());
     }
 }
 
