@@ -30,7 +30,7 @@ def generate_launch_description():
     lookup_table_path = PythonExpression([
         "'", FindPackageShare('crazy_controller'), "/config/SIM_linear_lookup_table.csv' if '", 
         LaunchConfiguration('mod'), "' in ['sim', 'sim_pf'] else '",
-        FindPackageShare('crazy_controller'), "/config/RBC1_pacejka_lookup_table.csv'"
+        FindPackageShare('crazy_controller'), "/config/NUC4_pacejka_lookup_table.csv'"
     ])
 
     # Dynamic odom topic based on mod
