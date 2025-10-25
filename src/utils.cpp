@@ -445,10 +445,10 @@ std::pair<Eigen::Vector2d, double> MAP_Controller::calc_L1_point(double lateral_
   const double lower_bound = std::max(t_clip_min_, lateral_multiplier * lateral_error);
   L1_distance = utils::clamp(L1_distance, lower_bound, t_clip_max_);
 
-  if (logger_info_ && lateral_error > 1.0) {
-    logger_info_("[MAP Controller] Large lateral error: " + std::to_string(lateral_error) +
-                 "m, L1_distance: " + std::to_string(L1_distance) + "m");
-  }
+  // if (logger_info_ && lateral_error > 1.0) {
+  //   logger_info_("[MAP Controller] Large lateral error: " + std::to_string(lateral_error) +
+  //                "m, L1_distance: " + std::to_string(L1_distance) + "m");
+  // }
 
   Eigen::Vector2d L1_point =
       waypoint_at_distance_before_car(L1_distance,

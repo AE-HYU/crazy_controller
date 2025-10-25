@@ -240,6 +240,27 @@ void Controller::control_loop() {
 }
 
 std::pair<double,double> Controller::map_cycle() {
+    static Eigen::RowVector3d last_position(0, 0, 0);
+    static int same_position_count = 0;
+
+    auto current_position = position_in_map_.value();
+    double position_diff = (current_position - last_position).norm();
+
+    if (position_diff < 1e-6) {
+        same_position_count++;
+        if (same_position_count % 10 == 0) {
+            RCLCPP_WARN(this->get_logger(), "[MAP_CYCLE] Same position used %d times! pos=(%.3f, %.3f)",
+                        same_position_count, current_position(0), current_position(1));
+        }
+    } else {
+        if (same_position_count > 5) {
+            RCLCPP_INFO(this->get_logger(), "[MAP_CYCLE] Position changed after %d repeats, diff=%.6f m",
+                        same_position_count, position_diff);
+        }
+        same_position_count = 0;
+    }
+    last_position = current_position;
+
     auto res = map_controller_->main_loop(
         position_in_map_.value(),
         waypoint_array_in_map_,
@@ -287,6 +308,16 @@ void Controller::local_waypoint_cb(const WpntArray::SharedPtr msg) {
 }
 
 void Controller::car_state_cb(const Odometry::SharedPtr msg) {
+    static auto last_callback_time = this->now();
+    static auto last_msg_time = rclcpp::Time(0, 0, RCL_ROS_TIME);
+
+    auto current_callback_time = this->now();
+    auto current_msg_time = rclcpp::Time(msg->header.stamp);
+
+    double callback_dt = (current_callback_time - last_callback_time).seconds();
+    double msg_dt = (current_msg_time - last_msg_time).seconds();
+    double latency = (current_callback_time - current_msg_time).seconds();
+
     speed_now_ = msg->twist.twist.linear.x;
 
     const auto & p = msg->pose.pose.position;
@@ -299,6 +330,15 @@ void Controller::car_state_cb(const Odometry::SharedPtr msg) {
     Eigen::RowVector3d pose;
     pose << p.x, p.y, yaw;
     position_in_map_ = pose;
+
+    // Log callback interval, message interval, and latency
+    if (callback_dt > 0.035 || msg_dt > 0.035) {  // Log if > 35ms (slower than expected 25ms)
+        RCLCPP_WARN(this->get_logger(), "[ODOM_CB] CB_dt=%.2f ms | MSG_dt=%.2f ms | latency=%.2f ms | pos=(%.2f, %.2f)",
+                    callback_dt * 1000.0, msg_dt * 1000.0, latency * 1000.0, p.x, p.y);
+    }
+
+    last_callback_time = current_callback_time;
+    last_msg_time = current_msg_time;
 }
 
 void Controller::car_state_frenet_cb(const Odometry::SharedPtr msg) {
