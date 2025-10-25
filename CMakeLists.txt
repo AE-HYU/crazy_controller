@@ -30,6 +30,7 @@ add_executable(controller_node
 add_executable(pp_controller_node
   src/pp_controller.cpp
   src/utils_pp.cpp
+  src/utils.cpp
 )
 
 # Specify dependencies
