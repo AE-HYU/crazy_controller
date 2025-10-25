@@ -4,6 +4,7 @@
 #include <ackermann_msgs/msg/ackermann_drive_stamped.hpp>
 #include <ae_hyu_msgs/msg/wpnt_array.hpp>
 #include <nav_msgs/msg/odometry.hpp>
+#include <sensor_msgs/msg/imu.hpp>
 #include <rcl_interfaces/msg/parameter_event.hpp>
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
@@ -48,6 +49,7 @@ private:
     void local_waypoint_cb(const ae_hyu_msgs::msg::WpntArray::SharedPtr msg);
     void car_state_cb(const nav_msgs::msg::Odometry::SharedPtr msg);
     void car_state_frenet_cb(const nav_msgs::msg::Odometry::SharedPtr msg);
+    void imu_cb(const sensor_msgs::msg::Imu::SharedPtr msg);
     void on_parameter_event(const rcl_interfaces::msg::ParameterEvent & event);
 
     // Configuration parameters
@@ -63,6 +65,7 @@ private:
     rclcpp::Subscription<ae_hyu_msgs::msg::WpntArray>::SharedPtr sub_local_waypoints_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_car_state_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_car_state_frenet_;
+    rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr sub_imu_;
 
     // TF
     std::shared_ptr<tf2_ros::Buffer> tf_buffer_;

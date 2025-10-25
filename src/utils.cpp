@@ -396,6 +396,8 @@ double MAP_Controller::calc_steering_angle(const Eigen::Vector2d& L1_point,
 
   steering_angle = speed_steer_scaling(steering_angle, speed_for_lu);
 
+  steering_angle = acc_scaling(steering_angle);
+
   steering_angle *= utils::clamp(1.0 + (speed_now_ / 10.0), 1.0, 1.25);
 
   const double threshold = 0.4;
@@ -479,9 +481,9 @@ double MAP_Controller::distance(const Eigen::Vector2d& p1, const Eigen::Vector2d
 
 double MAP_Controller::acc_scaling(double steer) const {
   const double mean_acc = (acc_now_.size() > 0) ? acc_now_.mean() : 0.0;
-  if (mean_acc >= 1.0) {
+  if (mean_acc >= 0.8) {
     return steer * acc_scaler_for_steer_;
-  } else if (mean_acc <= -1.0) {
+  } else if (mean_acc <= -0.8) {
     return steer * dec_scaler_for_steer_;
   }
   return steer;

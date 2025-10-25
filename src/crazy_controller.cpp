@@ -81,6 +81,8 @@ bool Controller::initialize() {
                      std::bind(&Controller::car_state_cb, this, std::placeholders::_1));
     sub_car_state_frenet_ = this->create_subscription<Odometry>("/frenet/odom", 10,
                            std::bind(&Controller::car_state_frenet_cb, this, std::placeholders::_1));
+    sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>("/sensors/imu/raw", 10,
+              std::bind(&Controller::imu_cb, this, std::placeholders::_1));
 
     // Initialize parameter event handler with minimal delay to avoid bad_weak_ptr
     param_init_timer_ = this->create_wall_timer(
@@ -344,6 +346,26 @@ void Controller::car_state_frenet_cb(const Odometry::SharedPtr msg) {
     Eigen::Vector4d fr;
     fr << s, d, vs, vd;
     position_in_map_frenet_ = fr;
+}
+
+void Controller::imu_cb(const sensor_msgs::msg::Imu::SharedPtr msg) {
+    // Extract x-axis linear acceleration from IMU
+    const double acc_x = msg->linear_acceleration.x;
+    
+    // Maintain a sliding window of the most recent 8 acceleration values
+    const int window_size = 8;
+    
+    if (acc_now_.size() < window_size) {
+        // Resize and append new value
+        Eigen::VectorXd temp = acc_now_;
+        acc_now_.resize(temp.size() + 1);
+        acc_now_.head(temp.size()) = temp;
+        acc_now_(temp.size()) = acc_x;
+    } else {
+        // Shift left and add new value at the end
+        acc_now_.head(window_size - 1) = acc_now_.tail(window_size - 1);
+        acc_now_(window_size - 1) = acc_x;
+    }
 }
 
 void Controller::on_parameter_event(const rcl_interfaces::msg::ParameterEvent & event) {

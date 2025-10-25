@@ -148,6 +148,8 @@ double PP_Controller::calc_steering_angle(const Eigen::Vector2d& L1_point,
 
   steering_angle = speed_steer_scaling(steering_angle, speed_for_lu);
 
+  steering_angle = acc_scaling(steering_angle);
+
   steering_angle *= utils::clamp(1.0 + (speed_now_ / 10.0), 1.0, 1.25);
 
   const double threshold = 0.4;
