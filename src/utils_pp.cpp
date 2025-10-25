@@ -28,7 +28,6 @@ PP_Controller::PP_Controller(
     double end_scale_speed,
     double downscale_factor,
     double speed_lookahead_for_steer,
-    double loop_rate,
     const std::string& LUT_path,
     Logger logger_info,
     Logger logger_warn)
@@ -44,7 +43,6 @@ PP_Controller::PP_Controller(
     end_scale_speed_(end_scale_speed),
     downscale_factor_(downscale_factor),
     speed_lookahead_for_steer_(speed_lookahead_for_steer),
-    loop_rate_(loop_rate),
     LUT_path_(LUT_path),
     acc_now_(10),
     curvature_waypoints_(0.0),
@@ -61,15 +59,13 @@ PPResult PP_Controller::main_loop(
     const Eigen::MatrixXd& waypoint_array_in_map,
     double speed_now,
     const Eigen::Vector2d& position_in_map_frenet,
-    const Eigen::VectorXd& acc_now,
-    double track_length)
+    const Eigen::VectorXd& acc_now)
 {
   position_in_map_ = position_in_map;
   waypoint_array_in_map_ = waypoint_array_in_map;
   speed_now_ = speed_now;
   position_in_map_frenet_ = position_in_map_frenet;
   acc_now_ = acc_now;
-  track_length_ = track_length;
 
   const double yaw = position_in_map_(2);
   Eigen::Vector2d v(std::cos(yaw) * speed_now_, std::sin(yaw) * speed_now_);

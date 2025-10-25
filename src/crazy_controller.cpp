@@ -73,8 +73,6 @@ bool Controller::initialize() {
     }
 
     // Initialize subscribers with topic names matching sk_control
-    sub_track_length_ = this->create_subscription<WpntArray>("/global_waypoints", 10,
-                        std::bind(&Controller::track_length_cb, this, std::placeholders::_1));
     sub_local_waypoints_ = this->create_subscription<WpntArray>("/local_waypoints", 10,
                           std::bind(&Controller::local_waypoint_cb, this, std::placeholders::_1));
     sub_car_state_ = this->create_subscription<Odometry>("/odom", 10,
@@ -136,7 +134,6 @@ void Controller::init_map_controller() {
         this->get_parameter("end_scale_speed").as_double(),
         this->get_parameter("downscale_factor").as_double(),
         this->get_parameter("speed_lookahead_for_steer").as_double(),
-        static_cast<double>(rate_),
         LUT_path_,
         info, warn);
 
@@ -182,18 +179,13 @@ void Controller::declare_l1_dynamic_parameters_from_yaml(const std::string& yaml
 
 void Controller::wait_for_messages() {
     RCLCPP_INFO(this->get_logger(), "Controller waiting for messages...");
-    bool track_length_received = false;
     bool waypoint_array_received = false;
     bool car_state_received = false;
 
     auto start_time = this->get_clock()->now();
-    while (rclcpp::ok() && (!track_length_received || !waypoint_array_received || !car_state_received)) {
+    while (rclcpp::ok() && (!waypoint_array_received || !car_state_received)) {
         rclcpp::spin_some(this->shared_from_this());
 
-        if (track_length_.has_value() && !track_length_received) {
-            RCLCPP_INFO(this->get_logger(), "✓ Received track length: %.2f m", track_length_.value());
-            track_length_received = true;
-        }
         if (waypoint_array_in_map_.size() > 0 && !waypoint_array_received) {
             RCLCPP_INFO(this->get_logger(), "✓ Received waypoint array (%d waypoints)",
                        static_cast<int>(waypoint_array_in_map_.rows()));
@@ -210,8 +202,7 @@ void Controller::wait_for_messages() {
         // Log waiting status every 2 seconds
         auto elapsed = (this->get_clock()->now() - start_time).seconds();
         if (static_cast<int>(elapsed) % 2 == 0 && elapsed > 0) {
-            RCLCPP_INFO(this->get_logger(), "Waiting... track_length:%s, waypoints:%s, car_state:%s (%.1fs elapsed)",
-                       track_length_received ? "✓" : "✗",
+            RCLCPP_INFO(this->get_logger(), "Waiting... waypoints:%s, car_state:%s (%.1fs elapsed)",
                        waypoint_array_received ? "✓" : "✗",
                        car_state_received ? "✓" : "✗", elapsed);
         }
@@ -261,8 +252,7 @@ std::pair<double,double> Controller::map_cycle() {
         waypoint_array_in_map_,
         speed_now_.value(),
         Eigen::Vector2d(position_in_map_frenet_.value()(0), position_in_map_frenet_.value()(1)),
-        acc_now_,
-        track_length_.value_or(0.0));
+        acc_now_);
 
     waypoint_safety_counter_ += 1;
     if (waypoint_safety_counter_ >= rate_ * 5) {  // 5 second timeout
@@ -274,11 +264,6 @@ std::pair<double,double> Controller::map_cycle() {
 }
 
 // Callback functions
-void Controller::track_length_cb(const WpntArray::SharedPtr msg) {
-    if (msg->wpnts.empty()) return;
-    track_length_ = msg->wpnts.back().s_m;
-}
-
 void Controller::local_waypoint_cb(const WpntArray::SharedPtr msg) {
     const auto N = static_cast<int>(msg->wpnts.size());
     if (N <= 0) return;
