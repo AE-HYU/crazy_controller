@@ -11,6 +11,7 @@ find_package(rclcpp REQUIRED)
 find_package(ackermann_msgs REQUIRED)
 find_package(ae_hyu_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
 find_package(rcl_interfaces REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
@@ -39,6 +40,7 @@ ament_target_dependencies(controller_node
   ackermann_msgs
   ae_hyu_msgs
   nav_msgs
+  sensor_msgs
   rcl_interfaces
   tf2
   tf2_geometry_msgs
@@ -50,6 +52,7 @@ ament_target_dependencies(pp_controller_node
   ackermann_msgs
   ae_hyu_msgs
   nav_msgs
+  sensor_msgs
   rcl_interfaces
   tf2
   tf2_geometry_msgs
