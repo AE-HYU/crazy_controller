@@ -85,10 +85,16 @@ TwoNeighbors find_closest_neighbors(const std::vector<double>& array_in, double 
     auto [closest, closest_idx] = find_nearest(array, value);
 
     if (closest_idx == 0) {
+        // Lower boundary: clamp to minimum value
         return {array[0], 0, array[0], 0};
     } else if (closest_idx == array.size() - 1) {
+        // Upper boundary: use last two points for extrapolation
         std::size_t i = array.size() - 1;
-        return {array[i], i, array[i], i};
+        if (i >= 1) {
+            return {array[i], i, array[i-1], i-1};
+        } else {
+            return {array[i], i, array[i], i};
+        }
     } else {
         std::size_t left  = closest_idx - 1;
         std::size_t right = closest_idx + 1;
