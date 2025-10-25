@@ -1,6 +1,6 @@
 # Crazy Controller
 
-MAP (Model-based Adaptive Pursuit) controller for F1TENTH with safety features and dynamic parameter tuning.
+MAP (Model-based Acceleration-based Pursuit) controller for F1TENTH with safety features and dynamic parameter tuning.
 
 ## Quick Start
 

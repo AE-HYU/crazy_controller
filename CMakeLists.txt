@@ -27,8 +27,24 @@ add_executable(controller_node
   src/utils.cpp
 )
 
+add_executable(pp_controller_node
+  src/pp_controller.cpp
+  src/utils_pp.cpp
+)
+
 # Specify dependencies
 ament_target_dependencies(controller_node
+  rclcpp
+  ackermann_msgs
+  ae_hyu_msgs
+  nav_msgs
+  rcl_interfaces
+  tf2
+  tf2_geometry_msgs
+  tf2_ros
+)
+
+ament_target_dependencies(pp_controller_node
   rclcpp
   ackermann_msgs
   ae_hyu_msgs
@@ -45,11 +61,18 @@ target_link_libraries(controller_node
   yaml-cpp
 )
 
+target_link_libraries(pp_controller_node
+  Eigen3::Eigen
+  yaml-cpp
+)
+
 target_compile_features(controller_node PUBLIC cxx_std_17)
+target_compile_features(pp_controller_node PUBLIC cxx_std_17)
 
 # Install targets
 install(TARGETS
   controller_node
+  pp_controller_node
   DESTINATION lib/${PROJECT_NAME}
 )
 

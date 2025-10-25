@@ -27,6 +27,10 @@ def generate_launch_description():
         FindPackageShare('crazy_controller'), "/config/l1_params.yaml'"
     ])
 
+    pp_params_path = PythonExpression([
+        "'", FindPackageShare('crazy_controller'), "/config/pp_params.yaml'"
+    ])
+
     lookup_table_path = PythonExpression([
         "'", FindPackageShare('crazy_controller'), "/config/SIM_linear_lookup_table.csv' if '", 
         LaunchConfiguration('mod'), "' in ['sim', 'sim_pf'] else '",
@@ -47,12 +51,15 @@ def generate_launch_description():
         "'ego_racecar/base_link' if '", LaunchConfiguration('mod'), "' == 'sim' else 'base_link'"
     ])
 
-    # Controller node
-    controller_node = Node(
+    # Controller node (MAP)
+    map_controller_node = Node(
         package='crazy_controller',
         executable='controller_node',
         name='controller_manager',
         output='screen',
+        condition=UnlessCondition(
+            PythonExpression(["'", LaunchConfiguration('controller_mode'), "' == 'PP'"])
+        ),
         parameters=[{
             'mode': LaunchConfiguration('controller_mode'),
             'l1_params_path': l1_params_path,
@@ -70,8 +77,35 @@ def generate_launch_description():
         ]
     )
 
+    # Pure Pursuit Controller node (PP)
+    pp_controller_node = Node(
+        package='crazy_controller',
+        executable='pp_controller_node',
+        name='pp_controller_manager',
+        output='screen',
+        condition=IfCondition(
+            PythonExpression(["'", LaunchConfiguration('controller_mode'), "' == 'PP'"])
+        ),
+        parameters=[{
+            'mode': LaunchConfiguration('controller_mode'),
+            'pp_params_path': pp_params_path,
+            'lookup_table_path': lookup_table_path,
+            'map_frame': map_frame,
+            'base_link_frame': base_link_frame,
+            'use_sim_time': PythonExpression([
+                "'true' if '", LaunchConfiguration('mod'), "' == 'sim' else 'false'"
+            ])
+        }],
+        remappings=[
+            ('/planned_path', '/planned_waypoints'),
+            ('/odom', odom_topic),
+            ('/frenet/odom', '/car_state/frenet/odom'),
+        ]
+    )
+
     return LaunchDescription([
         controller_mode_arg,
         mod_arg,
-        controller_node,
+        map_controller_node,
+        pp_controller_node,
     ])
