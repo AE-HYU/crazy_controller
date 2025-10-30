@@ -440,15 +440,22 @@ std::pair<Eigen::Vector2d, double> MAP_Controller::calc_L1_point(double lateral_
 
   double L1_distance = q_l1_ + speed_now_ * m_l1_;
 
+  // Adjust L1 distance based on path curvature
+  double gain = 1 - 0.25 * curvature_waypoints_;
+  L1_distance *= gain;
+
   // For large lateral errors, increase L1 distance more aggressively to improve stability
-  const double lateral_multiplier = (lateral_error > 1.0) ? 2.0 : std::sqrt(2.0);
-  const double lower_bound = std::max(t_clip_min_, lateral_multiplier * lateral_error);
-  L1_distance = utils::clamp(L1_distance, lower_bound, t_clip_max_);
+  // const double lateral_multiplier = (lateral_error > 1.0) ? 2.0 : std::sqrt(2.0);
+  // const double lower_bound = std::max(t_clip_min_, lateral_multiplier * lateral_error);
+  // L1_distance = utils::clamp(L1_distance, lower_bound, t_clip_max_);
 
   // if (logger_info_ && lateral_error > 1.0) {
   //   logger_info_("[MAP Controller] Large lateral error: " + std::to_string(lateral_error) +
   //                "m, L1_distance: " + std::to_string(L1_distance) + "m");
-  // }
+  //
+
+  
+
 
   Eigen::Vector2d L1_point =
       waypoint_at_distance_before_car(L1_distance,
