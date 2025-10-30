@@ -391,10 +391,14 @@ double MAP_Controller::calc_steering_angle(const Eigen::Vector2d& L1_point,
     if (logger_warn_) logger_warn_("[Controller] L1 * np.sin(eta), lat_acc is set to 0");
     lat_acc = 0.0;
   } else {
-    lat_acc = 2.0 * speed_for_lu * speed_for_lu / L1_distance * std::sin(eta);
+    // 현재 차속이 좀 더 이치에 맞는 거 같아서 한 번 수정해봄 (2025.10.31 새벽에 수정함. 수정 1)
+    // lat_acc = 2.0 * speed_for_lu * speed_for_lu / L1_distance * std::sin(eta);
+    lat_acc = 2.0 * speed_now_ * speed_now_ / L1_distance * std::sin(eta);
   }
 
-  double steering_angle = steer_lookup_.lookup_steer_angle(lat_acc, speed_for_lu);
+  // 수정 1과 같은 논리로 speed_for_lu -> speed_now_ 로 변경 (2025.10.31 새벽에 수정함. 수정 2)
+  // double steering_angle = steer_lookup_.lookup_steer_angle(lat_acc, speed_for_lu);
+  double steering_angle = steer_lookup_.lookup_steer_angle(lat_acc, speed_now_);
 
   steering_angle = speed_steer_scaling(steering_angle, speed_for_lu);
 
@@ -435,17 +439,40 @@ std::pair<Eigen::Vector2d, double> MAP_Controller::calc_L1_point(double lateral_
     idx_nearest_waypoint_ = 0;
   }
 
-  if ((waypoint_array_in_map_.rows() - idx_nearest_waypoint_.value()) > 2) {
-    curvature_waypoints_ =
-        (waypoint_array_in_map_.block(idx_nearest_waypoint_.value(), 5,
-                                      waypoint_array_in_map_.rows() - idx_nearest_waypoint_.value(), 1)
-         .cwiseAbs().mean());
+  // 수정 3: 기존 code - 최근접 웨이포인트부터 끝까지의 곡률 평균
+  // if ((waypoint_array_in_map_.rows() - idx_nearest_waypoint_.value()) > 2) {
+  //   curvature_waypoints_ =
+  //       (waypoint_array_in_map_.block(idx_nearest_waypoint_.value(), 5,
+  //                                     waypoint_array_in_map_.rows() - idx_nearest_waypoint_.value(), 1)
+  //        .cwiseAbs().mean());
+  // }
+
+  // 수정 3: 최근접 웨이포인트부터 n개까지만의 곡률 절대값 평균을 사용
+  // n = floor(speed_now_ * speed_lookahead_ * 1.25) * 10
+  // (실시간 계산)
+  {
+    const Eigen::Index start_idx = static_cast<Eigen::Index>(idx_nearest_waypoint_.value());
+    const Eigen::Index total_rows = waypoint_array_in_map_.rows();
+    const Eigen::Index remaining = std::max<Eigen::Index>(0, total_rows - start_idx);
+
+    int n = static_cast<int>(std::floor(speed_now_ * speed_lookahead_ * 1.25 * 10.0));
+    // 최소 1개, 최대 남은 행 수로 제한
+    n = std::clamp(n, 1, static_cast<int>(remaining));
+
+    if (remaining > 0 && n > 0) {
+      curvature_waypoints_ = waypoint_array_in_map_
+        .block(start_idx, 5, static_cast<Eigen::Index>(n), 1)
+        .cwiseAbs()
+        .mean();
+    } else {
+      curvature_waypoints_ = 0.0;
+    }
   }
 
   double L1_distance = q_l1_ + speed_now_ * m_l1_;
 
-  double gain = 1.0 - 0.25 * curvature_waypoints_;
-  L1_distance *= gain;
+//   double gain = 1.0 - 0.25 * curvature_waypoints_;
+//   L1_distance *= gain;
 
   // For large lateral errors, increase L1 distance more aggressively to improve stability
   const double lateral_multiplier = (lateral_error > 1.0) ? 2.0 : std::sqrt(2.0);
