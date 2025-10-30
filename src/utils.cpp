@@ -444,6 +444,9 @@ std::pair<Eigen::Vector2d, double> MAP_Controller::calc_L1_point(double lateral_
 
   double L1_distance = q_l1_ + speed_now_ * m_l1_;
 
+  double gain = 1.0 - 0.25 * curvature_waypoints_;
+  L1_distance *= gain;
+
   // For large lateral errors, increase L1 distance more aggressively to improve stability
   const double lateral_multiplier = (lateral_error > 1.0) ? 2.0 : std::sqrt(2.0);
   const double lower_bound = std::max(t_clip_min_, lateral_multiplier * lateral_error);
