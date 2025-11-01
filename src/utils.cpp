@@ -449,7 +449,7 @@ double MAP_Controller::calc_steering_angle(const Eigen::Vector2d& L1_point,
                            curr_steering_angle_ + threshold);
   }
 
-  const double max_steering_angle = 0.48; // 수정 5: 0.45 -> 0.48 rad로 max steering angle 상향 조정
+  const double max_steering_angle = 0.45; // 수정 5: 0.45 -> 0.48 rad로 max steering angle 상향 조정
   steering_angle = utils::clamp(steering_angle, -max_steering_angle, max_steering_angle);
 
   curr_steering_angle_ = steering_angle;
