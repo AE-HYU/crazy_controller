@@ -345,6 +345,25 @@ MAPResult MAP_Controller::main_loop(
     throw std::runtime_error("L1_point is invalid");
   }
 
+  // Startup blending: if the difference between current speed and
+  // the nearest waypoint's speed profile is >= 4 m/s, treat as initial rollout
+  // and blend the final commanded speed with current speed to avoid aggressive jumps.
+  if (idx_nearest_waypoint_.has_value()) {
+    const int nearest_idx = static_cast<int>(idx_nearest_waypoint_.value());
+    if (nearest_idx >= 0 && nearest_idx < waypoint_array_in_map_.rows()) {
+      const double profile_speed = waypoint_array_in_map_(nearest_idx, 2);
+      const double diff = std::abs(profile_speed - speed_now_);
+      if (diff >= 4.0) { // Tuning Parameter 1
+        const double prev_speed = speed;
+        speed = 0.5 * (speed + speed_now_); // Tuning Parameter 2
+        if (logger_info_) logger_info_(
+          std::string("[MAP Controller] Startup blend active: |profile - v| = ") +
+          std::to_string(diff) + " m/s, speed " + std::to_string(prev_speed) +
+          " -> " + std::to_string(speed));
+      }
+    }
+  }
+
   double steering_angle = calc_steering_angle(L1_point, L1_distance, yaw, lat_e_norm, v);
 
   MAPResult out;
@@ -400,7 +419,8 @@ double MAP_Controller::calc_steering_angle(const Eigen::Vector2d& L1_point,
   // double steering_angle = steer_lookup_.lookup_steer_angle(lat_acc, speed_for_lu);
   double steering_angle = steer_lookup_.lookup_steer_angle(lat_acc, speed_now_);
 
-  steering_angle = speed_steer_scaling(steering_angle, speed_for_lu);
+  // 수정 4
+  steering_angle = speed_steer_scaling(steering_angle, speed_now_);
 
   steering_angle = acc_scaling(steering_angle);
 
