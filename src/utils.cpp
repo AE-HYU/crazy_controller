@@ -283,6 +283,8 @@ MAP_Controller::MAP_Controller(
     double end_scale_speed,
     double downscale_factor,
     double speed_lookahead_for_steer,
+    double diff_threshold,
+    double deacc_gain,
     const std::string& LUT_path,
     Logger logger_info,
     Logger logger_warn)
@@ -298,6 +300,8 @@ MAP_Controller::MAP_Controller(
     end_scale_speed_(end_scale_speed),
     downscale_factor_(downscale_factor),
     speed_lookahead_for_steer_(speed_lookahead_for_steer),
+    diff_threshold_(diff_threshold),
+    deacc_gain_(deacc_gain),
     LUT_path_(LUT_path),
     acc_now_(10),
     curvature_waypoints_(0.0),
@@ -346,19 +350,20 @@ MAPResult MAP_Controller::main_loop(
   }
 
   // Startup blending: if the difference between current speed and
-  // the nearest waypoint's speed profile is >= 4 m/s, treat as initial rollout
+  // the nearest waypoint's speed profile is >= diff_threshold_ (m/s), treat as initial rollout
   // and blend the final commanded speed with current speed to avoid aggressive jumps.
   if (idx_nearest_waypoint_.has_value()) {
-    const int nearest_idx = static_cast<int>(idx_nearest_waypoint_.value());
+    const int nearest_idx = static_cast<int>(idx_nearest_waypoint_.value()); 
     if (nearest_idx >= 0 && nearest_idx < waypoint_array_in_map_.rows()) {
       const double profile_speed = waypoint_array_in_map_(nearest_idx, 2);
       const double diff = std::abs(profile_speed - speed_now_);
-      if (diff >= 4.0) { // Tuning Parameter 1
+      if (diff >= diff_threshold_) { // configurable threshold
         const double prev_speed = speed;
-        speed = 0.5 * (speed + speed_now_); // Tuning Parameter 2
+        speed = deacc_gain_ * (speed + speed_now_); // configurable blending gain
         if (logger_info_) logger_info_(
           std::string("[MAP Controller] Startup blend active: |profile - v| = ") +
-          std::to_string(diff) + " m/s, speed " + std::to_string(prev_speed) +
+          std::to_string(diff) + " m/s (threshold=" + std::to_string(diff_threshold_) + ")"
+          ", gain=" + std::to_string(deacc_gain_) + ", speed " + std::to_string(prev_speed) +
           " -> " + std::to_string(speed));
       }
     }
@@ -444,7 +449,7 @@ double MAP_Controller::calc_steering_angle(const Eigen::Vector2d& L1_point,
                            curr_steering_angle_ + threshold);
   }
 
-  const double max_steering_angle = 0.45;
+  const double max_steering_angle = 0.48; // 수정 5: 0.45 -> 0.48 rad로 max steering angle 상향 조정
   steering_angle = utils::clamp(steering_angle, -max_steering_angle, max_steering_angle);
 
   curr_steering_angle_ = steering_angle;

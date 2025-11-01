@@ -134,6 +134,8 @@ void Controller::init_map_controller() {
         this->get_parameter("end_scale_speed").as_double(),
         this->get_parameter("downscale_factor").as_double(),
         this->get_parameter("speed_lookahead_for_steer").as_double(),
+        this->get_parameter("diff_threshold").as_double(),
+        this->get_parameter("deacc_gain").as_double(),
         LUT_path_,
         info, warn);
 
@@ -175,6 +177,9 @@ void Controller::declare_l1_dynamic_parameters_from_yaml(const std::string& yaml
     declare_double("end_scale_speed", params["end_scale_speed"].as<double>(), fp(0.0, 10.0, 0.01));
     declare_double("downscale_factor", params["downscale_factor"].as<double>(), fp(0.0, 0.5, 0.01));
     declare_double("speed_lookahead_for_steer", params["speed_lookahead_for_steer"].as<double>(), fp(0.0, 0.2, 0.01));
+    // Startup blending parameters
+    declare_double("diff_threshold", params["diff_threshold"].as<double>(), fp(0.0, 20.0, 0.1));
+    declare_double("deacc_gain", params["deacc_gain"].as<double>(), fp(0.0, 1.0, 0.01));
 }
 
 void Controller::wait_for_messages() {
@@ -373,6 +378,8 @@ void Controller::on_parameter_event(const rcl_interfaces::msg::ParameterEvent & 
     map_controller_->set_end_scale_speed(getp("end_scale_speed"));
     map_controller_->set_downscale_factor(getp("downscale_factor"));
     map_controller_->set_speed_lookahead_for_steer(getp("speed_lookahead_for_steer"));
+    map_controller_->set_diff_threshold(getp("diff_threshold"));
+    map_controller_->set_deacc_gain(getp("deacc_gain"));
 
     RCLCPP_INFO(this->get_logger(), "Updated parameters");
 }
