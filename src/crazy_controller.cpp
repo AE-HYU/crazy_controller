@@ -230,6 +230,11 @@ void Controller::control_loop() {
         return;
     }
 
+    // Update position from TF at control loop frequency for real-time accuracy
+    if (!update_position_from_tf()) {
+        return;  // Skip this cycle if TF lookup fails
+    }
+
     if (!speed_now_.has_value() || !position_in_map_.has_value() ||
         !position_in_map_frenet_.has_value() || waypoint_array_in_map_.rows() == 0) {
         return;
@@ -293,11 +298,45 @@ void Controller::local_waypoint_cb(const WpntArray::SharedPtr msg) {
 }
 
 void Controller::car_state_cb(const Odometry::SharedPtr msg) {
-    // Get velocity from odom message
+    // Only update velocity from odom message
+    // Position is updated in control_loop via TF for real-time accuracy
     speed_now_ = msg->twist.twist.linear.x;
+}
 
-    // Get position and orientation from TF (map_frame_ -> base_link_frame_)
+void Controller::car_state_frenet_cb(const Odometry::SharedPtr msg) {
+    const double s  = msg->pose.pose.position.x;
+    const double d  = msg->pose.pose.position.y;
+    const double vs = msg->twist.twist.linear.x;
+    const double vd = msg->twist.twist.linear.y;
+
+    Eigen::Vector4d fr;
+    fr << s, d, vs, vd;
+    position_in_map_frenet_ = fr;
+}
+
+void Controller::imu_cb(const sensor_msgs::msg::Imu::SharedPtr msg) {
+    // Extract x-axis linear acceleration from IMU
+    const double acc_x = msg->linear_acceleration.x;
+
+    // Maintain a sliding window of the most recent 8 acceleration values
+    const int window_size = 8;
+
+    if (acc_now_.size() < window_size) {
+        // Resize and append new value
+        Eigen::VectorXd temp = acc_now_;
+        acc_now_.resize(temp.size() + 1);
+        acc_now_.head(temp.size()) = temp;
+        acc_now_(temp.size()) = acc_x;
+    } else {
+        // Shift left and add new value at the end
+        acc_now_.head(window_size - 1) = acc_now_.tail(window_size - 1);
+        acc_now_(window_size - 1) = acc_x;
+    }
+}
+
+bool Controller::update_position_from_tf() {
     try {
+        // Get latest available transform from map to base_link
         auto transform = tf_buffer_->lookupTransform(
             map_frame_, base_link_frame_,
             tf2::TimePointZero  // Get latest available transform
@@ -317,44 +356,18 @@ void Controller::car_state_cb(const Odometry::SharedPtr msg) {
         double roll, pitch, yaw;
         tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
 
+        // Update position
         Eigen::RowVector3d pose;
         pose << x, y, yaw;
         position_in_map_ = pose;
 
+        return true;
+
     } catch (const tf2::TransformException & ex) {
         RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
-                            "Could not get %s->%s transform: %s", map_frame_.c_str(), base_link_frame_.c_str(), ex.what());
-    }
-}
-
-void Controller::car_state_frenet_cb(const Odometry::SharedPtr msg) {
-    const double s  = msg->pose.pose.position.x;
-    const double d  = msg->pose.pose.position.y;
-    const double vs = msg->twist.twist.linear.x;
-    const double vd = msg->twist.twist.linear.y;
-
-    Eigen::Vector4d fr;
-    fr << s, d, vs, vd;
-    position_in_map_frenet_ = fr;
-}
-
-void Controller::imu_cb(const sensor_msgs::msg::Imu::SharedPtr msg) {
-    // Extract x-axis linear acceleration from IMU
-    const double acc_x = msg->linear_acceleration.x;
-    
-    // Maintain a sliding window of the most recent 8 acceleration values
-    const int window_size = 8;
-    
-    if (acc_now_.size() < window_size) {
-        // Resize and append new value
-        Eigen::VectorXd temp = acc_now_;
-        acc_now_.resize(temp.size() + 1);
-        acc_now_.head(temp.size()) = temp;
-        acc_now_(temp.size()) = acc_x;
-    } else {
-        // Shift left and add new value at the end
-        acc_now_.head(window_size - 1) = acc_now_.tail(window_size - 1);
-        acc_now_(window_size - 1) = acc_x;
+                            "Could not get %s->%s transform: %s",
+                            map_frame_.c_str(), base_link_frame_.c_str(), ex.what());
+        return false;
     }
 }
 

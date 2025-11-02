@@ -51,6 +51,9 @@ private:
     void imu_cb(const sensor_msgs::msg::Imu::SharedPtr msg);
     void on_parameter_event(const rcl_interfaces::msg::ParameterEvent & event);
 
+    // Helper functions
+    bool update_position_from_tf();
+
     // Configuration parameters
     int rate_ = 40;
     std::string LUT_path_;
