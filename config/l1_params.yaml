@@ -4,7 +4,7 @@ crazy_controller:
     t_clip_max: 5
     m_l1: 0.3        # Reduce speed dependency for smoother startup
     q_l1: 0.5        # Increase base lookahead distance
-    speed_lookahead: 0.15
+    speed_lookahead: 0.1
     lat_err_coeff: 1.0
     # acc_scaler_for_steer_safe: 1.2
     # dec_scaler_for_steer_safe: 0.9 
@@ -18,6 +18,12 @@ crazy_controller:
 
     # increasing this to 0.20 AT MOST can make the car faster on the laptime but cut more corners
     speed_lookahead_for_steer: 0.0 # safe/agg 0.0/0.175
+
+    # Startup blending controls
+    # If |profile_speed - speed_now| >= diff_threshold (m/s),
+    # apply blending: speed = deacc_gain * (speed + speed_now)
+    diff_threshold: 4.0
+    deacc_gain: 0.3
 
     ## Acceleration Based Velocity Controller Parameters
     vel_accel_mode: False

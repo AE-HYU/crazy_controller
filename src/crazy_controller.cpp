@@ -41,7 +41,21 @@ bool Controller::initialize() {
     // Get essential parameters
     LUT_path_ = this->get_parameter("lookup_table_path").as_string();
     mode_ = this->get_parameter("mode").as_string();
+
+    // Get TF frame parameters
+    if (this->has_parameter("map_frame")) {
+        map_frame_ = this->get_parameter("map_frame").as_string();
+    }
+    if (this->has_parameter("base_link_frame")) {
+        base_link_frame_ = this->get_parameter("base_link_frame").as_string();
+    }
+
     RCLCPP_INFO(this->get_logger(), "Using lookup table: %s", LUT_path_.c_str());
+    RCLCPP_INFO(this->get_logger(), "Using TF: %s -> %s", map_frame_.c_str(), base_link_frame_.c_str());
+
+    // Initialize TF
+    tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
+    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
 
     // Initialize publishers
     drive_pub_ = this->create_publisher<AckermannDriveStamped>("/drive", 10);
@@ -59,14 +73,14 @@ bool Controller::initialize() {
     }
 
     // Initialize subscribers with topic names matching sk_control
-    sub_track_length_ = this->create_subscription<WpntArray>("/global_waypoints", 10,
-                        std::bind(&Controller::track_length_cb, this, std::placeholders::_1));
     sub_local_waypoints_ = this->create_subscription<WpntArray>("/local_waypoints", 10,
                           std::bind(&Controller::local_waypoint_cb, this, std::placeholders::_1));
     sub_car_state_ = this->create_subscription<Odometry>("/odom", 10,
                      std::bind(&Controller::car_state_cb, this, std::placeholders::_1));
     sub_car_state_frenet_ = this->create_subscription<Odometry>("/frenet/odom", 10,
                            std::bind(&Controller::car_state_frenet_cb, this, std::placeholders::_1));
+    sub_imu_ = this->create_subscription<sensor_msgs::msg::Imu>("/sensors/imu/raw", 10,
+              std::bind(&Controller::imu_cb, this, std::placeholders::_1));
 
     // Initialize parameter event handler with minimal delay to avoid bad_weak_ptr
     param_init_timer_ = this->create_wall_timer(
@@ -120,7 +134,8 @@ void Controller::init_map_controller() {
         this->get_parameter("end_scale_speed").as_double(),
         this->get_parameter("downscale_factor").as_double(),
         this->get_parameter("speed_lookahead_for_steer").as_double(),
-        static_cast<double>(rate_),
+        this->get_parameter("diff_threshold").as_double(),
+        this->get_parameter("deacc_gain").as_double(),
         LUT_path_,
         info, warn);
 
@@ -162,22 +177,20 @@ void Controller::declare_l1_dynamic_parameters_from_yaml(const std::string& yaml
     declare_double("end_scale_speed", params["end_scale_speed"].as<double>(), fp(0.0, 10.0, 0.01));
     declare_double("downscale_factor", params["downscale_factor"].as<double>(), fp(0.0, 0.5, 0.01));
     declare_double("speed_lookahead_for_steer", params["speed_lookahead_for_steer"].as<double>(), fp(0.0, 0.2, 0.01));
+    // Startup blending parameters
+    declare_double("diff_threshold", params["diff_threshold"].as<double>(), fp(0.0, 20.0, 0.1));
+    declare_double("deacc_gain", params["deacc_gain"].as<double>(), fp(0.0, 1.0, 0.01));
 }
 
 void Controller::wait_for_messages() {
     RCLCPP_INFO(this->get_logger(), "Controller waiting for messages...");
-    bool track_length_received = false;
     bool waypoint_array_received = false;
     bool car_state_received = false;
 
     auto start_time = this->get_clock()->now();
-    while (rclcpp::ok() && (!track_length_received || !waypoint_array_received || !car_state_received)) {
+    while (rclcpp::ok() && (!waypoint_array_received || !car_state_received)) {
         rclcpp::spin_some(this->shared_from_this());
 
-        if (track_length_.has_value() && !track_length_received) {
-            RCLCPP_INFO(this->get_logger(), "✓ Received track length: %.2f m", track_length_.value());
-            track_length_received = true;
-        }
         if (waypoint_array_in_map_.size() > 0 && !waypoint_array_received) {
             RCLCPP_INFO(this->get_logger(), "✓ Received waypoint array (%d waypoints)",
                        static_cast<int>(waypoint_array_in_map_.rows()));
@@ -194,8 +207,7 @@ void Controller::wait_for_messages() {
         // Log waiting status every 2 seconds
         auto elapsed = (this->get_clock()->now() - start_time).seconds();
         if (static_cast<int>(elapsed) % 2 == 0 && elapsed > 0) {
-            RCLCPP_INFO(this->get_logger(), "Waiting... track_length:%s, waypoints:%s, car_state:%s (%.1fs elapsed)",
-                       track_length_received ? "✓" : "✗",
+            RCLCPP_INFO(this->get_logger(), "Waiting... waypoints:%s, car_state:%s (%.1fs elapsed)",
                        waypoint_array_received ? "✓" : "✗",
                        car_state_received ? "✓" : "✗", elapsed);
         }
@@ -216,6 +228,11 @@ void Controller::control_loop() {
         RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
                               "Unsupported mode or controller not ready");
         return;
+    }
+
+    // Update position from TF at control loop frequency for real-time accuracy
+    if (!update_position_from_tf()) {
+        return;  // Skip this cycle if TF lookup fails
     }
 
     if (!speed_now_.has_value() || !position_in_map_.has_value() ||
@@ -266,8 +283,7 @@ std::pair<double,double> Controller::map_cycle() {
         waypoint_array_in_map_,
         speed_now_.value(),
         Eigen::Vector2d(position_in_map_frenet_.value()(0), position_in_map_frenet_.value()(1)),
-        acc_now_,
-        track_length_.value_or(0.0));
+        acc_now_);
 
     waypoint_safety_counter_ += 1;
     if (waypoint_safety_counter_ >= rate_ * 5) {  // 5 second timeout
@@ -279,11 +295,6 @@ std::pair<double,double> Controller::map_cycle() {
 }
 
 // Callback functions
-void Controller::track_length_cb(const WpntArray::SharedPtr msg) {
-    if (msg->wpnts.empty()) return;
-    track_length_ = msg->wpnts.back().s_m;
-}
-
 void Controller::local_waypoint_cb(const WpntArray::SharedPtr msg) {
     const auto N = static_cast<int>(msg->wpnts.size());
     if (N <= 0) return;
@@ -308,37 +319,9 @@ void Controller::local_waypoint_cb(const WpntArray::SharedPtr msg) {
 }
 
 void Controller::car_state_cb(const Odometry::SharedPtr msg) {
-    static auto last_callback_time = this->now();
-    static auto last_msg_time = rclcpp::Time(0, 0, RCL_ROS_TIME);
-
-    auto current_callback_time = this->now();
-    auto current_msg_time = rclcpp::Time(msg->header.stamp);
-
-    double callback_dt = (current_callback_time - last_callback_time).seconds();
-    double msg_dt = (current_msg_time - last_msg_time).seconds();
-    double latency = (current_callback_time - current_msg_time).seconds();
-
+    // Only update velocity from odom message
+    // Position is updated in control_loop via TF for real-time accuracy
     speed_now_ = msg->twist.twist.linear.x;
-
-    const auto & p = msg->pose.pose.position;
-    const auto & q = msg->pose.pose.orientation;
-
-    tf2::Quaternion quat(q.x, q.y, q.z, q.w);
-    double roll, pitch, yaw;
-    tf2::Matrix3x3(quat).getRPY(roll, pitch, yaw);
-
-    Eigen::RowVector3d pose;
-    pose << p.x, p.y, yaw;
-    position_in_map_ = pose;
-
-    // Log callback interval, message interval, and latency
-    if (callback_dt > 0.035 || msg_dt > 0.035) {  // Log if > 35ms (slower than expected 25ms)
-        RCLCPP_WARN(this->get_logger(), "[ODOM_CB] CB_dt=%.2f ms | MSG_dt=%.2f ms | latency=%.2f ms | pos=(%.2f, %.2f)",
-                    callback_dt * 1000.0, msg_dt * 1000.0, latency * 1000.0, p.x, p.y);
-    }
-
-    last_callback_time = current_callback_time;
-    last_msg_time = current_msg_time;
 }
 
 void Controller::car_state_frenet_cb(const Odometry::SharedPtr msg) {
@@ -350,6 +333,63 @@ void Controller::car_state_frenet_cb(const Odometry::SharedPtr msg) {
     Eigen::Vector4d fr;
     fr << s, d, vs, vd;
     position_in_map_frenet_ = fr;
+}
+
+void Controller::imu_cb(const sensor_msgs::msg::Imu::SharedPtr msg) {
+    // Extract x-axis linear acceleration from IMU
+    const double acc_x = msg->linear_acceleration.x;
+
+    // Maintain a sliding window of the most recent 8 acceleration values
+    const int window_size = 8;
+
+    if (acc_now_.size() < window_size) {
+        // Resize and append new value
+        Eigen::VectorXd temp = acc_now_;
+        acc_now_.resize(temp.size() + 1);
+        acc_now_.head(temp.size()) = temp;
+        acc_now_(temp.size()) = acc_x;
+    } else {
+        // Shift left and add new value at the end
+        acc_now_.head(window_size - 1) = acc_now_.tail(window_size - 1);
+        acc_now_(window_size - 1) = acc_x;
+    }
+}
+
+bool Controller::update_position_from_tf() {
+    try {
+        // Get latest available transform from map to base_link
+        auto transform = tf_buffer_->lookupTransform(
+            map_frame_, base_link_frame_,
+            tf2::TimePointZero  // Get latest available transform
+        );
+
+        // Extract position
+        double x = transform.transform.translation.x;
+        double y = transform.transform.translation.y;
+
+        // Extract orientation (yaw)
+        tf2::Quaternion q(
+            transform.transform.rotation.x,
+            transform.transform.rotation.y,
+            transform.transform.rotation.z,
+            transform.transform.rotation.w
+        );
+        double roll, pitch, yaw;
+        tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
+
+        // Update position
+        Eigen::RowVector3d pose;
+        pose << x, y, yaw;
+        position_in_map_ = pose;
+
+        return true;
+
+    } catch (const tf2::TransformException & ex) {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
+                            "Could not get %s->%s transform: %s",
+                            map_frame_.c_str(), base_link_frame_.c_str(), ex.what());
+        return false;
+    }
 }
 
 void Controller::on_parameter_event(const rcl_interfaces::msg::ParameterEvent & event) {
@@ -372,6 +412,8 @@ void Controller::on_parameter_event(const rcl_interfaces::msg::ParameterEvent & 
     map_controller_->set_end_scale_speed(getp("end_scale_speed"));
     map_controller_->set_downscale_factor(getp("downscale_factor"));
     map_controller_->set_speed_lookahead_for_steer(getp("speed_lookahead_for_steer"));
+    map_controller_->set_diff_threshold(getp("diff_threshold"));
+    map_controller_->set_deacc_gain(getp("deacc_gain"));
 
     RCLCPP_INFO(this->get_logger(), "Updated parameters");
 }

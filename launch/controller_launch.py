@@ -17,16 +17,20 @@ def generate_launch_description():
     mod_arg = DeclareLaunchArgument(
         'mod',
         default_value='real',
-        description='Launch mode: real (use /pf/pose/odom), sim (use /ego_racecar/odom), sim_pf (use /pf/pose/odom)'
+        description='Launch mode: real (TF map->base_link + /odom), sim (TF map->ego_racecar/base_link + /ego_racecar/odom)'
     )
 
     # Dynamic parameter paths based on mod
     l1_params_path = PythonExpression([
-        "'", FindPackageShare('crazy_controller'), "/config/l1_params_sim.yaml' if '", 
-        LaunchConfiguration('mod'), "' in ['sim', 'sim_pf'] else '",
+        "'", FindPackageShare('crazy_controller'), "/config/l1_params_sim.yaml' if '",
+        LaunchConfiguration('mod'), "' == 'sim' else '",
         FindPackageShare('crazy_controller'), "/config/l1_params.yaml'"
     ])
-    
+
+    pp_params_path = PythonExpression([
+        "'", FindPackageShare('crazy_controller'), "/config/pp_params.yaml'"
+    ])
+
     lookup_table_path = PythonExpression([
         "'", FindPackageShare('crazy_controller'), "/config/SIM_linear_lookup_table.csv' if '", 
         LaunchConfiguration('mod'), "' in ['sim', 'sim_pf'] else '",
@@ -35,21 +39,61 @@ def generate_launch_description():
 
     # Dynamic odom topic based on mod
     odom_topic = PythonExpression([
-        "'/ego_racecar/odom' if '", LaunchConfiguration('mod'), "' == 'sim' else '/pf/pose/odom'"
+        "'/ego_racecar/odom' if '", LaunchConfiguration('mod'), "' == 'sim' else '/odom'"
     ])
 
-    # Controller node
-    controller_node = Node(
+    # Dynamic TF map and base_link frames based on mod
+    map_frame = PythonExpression([
+        "'mcl_map' if '", LaunchConfiguration('mod'), "' == 'sim' else 'map'"
+    ])
+
+    base_link_frame = PythonExpression([
+        "'ego_racecar/base_link' if '", LaunchConfiguration('mod'), "' == 'sim' else 'base_link'"
+    ])
+
+    # Controller node (MAP)
+    map_controller_node = Node(
         package='crazy_controller',
         executable='controller_node',
         name='controller_manager',
         output='screen',
+        condition=UnlessCondition(
+            PythonExpression(["'", LaunchConfiguration('controller_mode'), "' == 'PP'"])
+        ),
         parameters=[{
             'mode': LaunchConfiguration('controller_mode'),
             'l1_params_path': l1_params_path,
             'lookup_table_path': lookup_table_path,
+            'map_frame': map_frame,
+            'base_link_frame': base_link_frame,
             'use_sim_time': PythonExpression([
-                "'true' if '", LaunchConfiguration('mod'), "' in ['sim', 'sim_pf'] else 'false'"
+                "'true' if '", LaunchConfiguration('mod'), "' == 'sim' else 'false'"
+            ])
+        }],
+        remappings=[
+            ('/planned_path', '/planned_waypoints'),
+            ('/odom', odom_topic),
+            ('/frenet/odom', '/car_state/frenet/odom'),
+        ]
+    )
+
+    # Pure Pursuit Controller node (PP)
+    pp_controller_node = Node(
+        package='crazy_controller',
+        executable='pp_controller_node',
+        name='pp_controller_manager',
+        output='screen',
+        condition=IfCondition(
+            PythonExpression(["'", LaunchConfiguration('controller_mode'), "' == 'PP'"])
+        ),
+        parameters=[{
+            'mode': LaunchConfiguration('controller_mode'),
+            'pp_params_path': pp_params_path,
+            'lookup_table_path': lookup_table_path,
+            'map_frame': map_frame,
+            'base_link_frame': base_link_frame,
+            'use_sim_time': PythonExpression([
+                "'true' if '", LaunchConfiguration('mod'), "' == 'sim' else 'false'"
             ])
         }],
         remappings=[
@@ -62,5 +106,6 @@ def generate_launch_description():
     return LaunchDescription([
         controller_mode_arg,
         mod_arg,
-        controller_node,
+        map_controller_node,
+        pp_controller_node,
     ])

@@ -85,10 +85,16 @@ TwoNeighbors find_closest_neighbors(const std::vector<double>& array_in, double 
     auto [closest, closest_idx] = find_nearest(array, value);
 
     if (closest_idx == 0) {
+        // Lower boundary: clamp to minimum value
         return {array[0], 0, array[0], 0};
     } else if (closest_idx == array.size() - 1) {
+        // Upper boundary: use last two points for extrapolation
         std::size_t i = array.size() - 1;
-        return {array[i], i, array[i], i};
+        if (i >= 1) {
+            return {array[i], i, array[i-1], i-1};
+        } else {
+            return {array[i], i, array[i], i};
+        }
     } else {
         std::size_t left  = closest_idx - 1;
         std::size_t right = closest_idx + 1;
@@ -277,7 +283,8 @@ MAP_Controller::MAP_Controller(
     double end_scale_speed,
     double downscale_factor,
     double speed_lookahead_for_steer,
-    double loop_rate,
+    double diff_threshold,
+    double deacc_gain,
     const std::string& LUT_path,
     Logger logger_info,
     Logger logger_warn)
@@ -293,7 +300,8 @@ MAP_Controller::MAP_Controller(
     end_scale_speed_(end_scale_speed),
     downscale_factor_(downscale_factor),
     speed_lookahead_for_steer_(speed_lookahead_for_steer),
-    loop_rate_(loop_rate),
+    diff_threshold_(diff_threshold),
+    deacc_gain_(deacc_gain),
     LUT_path_(LUT_path),
     acc_now_(10),
     curvature_waypoints_(0.0),
@@ -310,15 +318,13 @@ MAPResult MAP_Controller::main_loop(
     const Eigen::MatrixXd& waypoint_array_in_map,
     double speed_now,
     const Eigen::Vector2d& position_in_map_frenet,
-    const Eigen::VectorXd& acc_now,
-    double track_length)
+    const Eigen::VectorXd& acc_now)
 {
   position_in_map_ = position_in_map;
   waypoint_array_in_map_ = waypoint_array_in_map;
   speed_now_ = speed_now;
   position_in_map_frenet_ = position_in_map_frenet;
   acc_now_ = acc_now;
-  track_length_ = track_length;
 
   const double yaw = position_in_map_(2);
   Eigen::Vector2d v(std::cos(yaw) * speed_now_, std::sin(yaw) * speed_now_);
@@ -341,6 +347,26 @@ MAPResult MAP_Controller::main_loop(
 
   if (!std::isfinite(L1_point.x()) || !std::isfinite(L1_point.y())) {
     throw std::runtime_error("L1_point is invalid");
+  }
+
+  // Startup blending: if the difference between current speed and
+  // the nearest waypoint's speed profile is >= diff_threshold_ (m/s), treat as initial rollout
+  // and blend the final commanded speed with current speed to avoid aggressive jumps.
+  if (idx_nearest_waypoint_.has_value()) {
+    const int nearest_idx = static_cast<int>(idx_nearest_waypoint_.value()); 
+    if (nearest_idx >= 0 && nearest_idx < waypoint_array_in_map_.rows()) {
+      const double profile_speed = waypoint_array_in_map_(nearest_idx, 2);
+      const double diff = std::abs(profile_speed - speed_now_);
+      if (diff >= diff_threshold_) { // configurable threshold
+        const double prev_speed = speed;
+        speed = deacc_gain_ * (speed + speed_now_); // configurable blending gain
+        if (logger_info_) logger_info_(
+          std::string("[MAP Controller] Startup blend active: |profile - v| = ") +
+          std::to_string(diff) + " m/s (threshold=" + std::to_string(diff_threshold_) + ")"
+          ", gain=" + std::to_string(deacc_gain_) + ", speed " + std::to_string(prev_speed) +
+          " -> " + std::to_string(speed));
+      }
+    }
   }
 
   double steering_angle = calc_steering_angle(L1_point, L1_distance, yaw, lat_e_norm, v);
@@ -389,12 +415,19 @@ double MAP_Controller::calc_steering_angle(const Eigen::Vector2d& L1_point,
     if (logger_warn_) logger_warn_("[Controller] L1 * np.sin(eta), lat_acc is set to 0");
     lat_acc = 0.0;
   } else {
-    lat_acc = 2.0 * speed_for_lu * speed_for_lu / L1_distance * std::sin(eta);
+    // 현재 차속이 좀 더 이치에 맞는 거 같아서 한 번 수정해봄 (2025.10.31 새벽에 수정함. 수정 1)
+    // lat_acc = 2.0 * speed_for_lu * speed_for_lu / L1_distance * std::sin(eta);
+    lat_acc = 2.0 * speed_now_ * speed_now_ / L1_distance * std::sin(eta);
   }
 
-  double steering_angle = steer_lookup_.lookup_steer_angle(lat_acc, speed_for_lu);
+  // 수정 1과 같은 논리로 speed_for_lu -> speed_now_ 로 변경 (2025.10.31 새벽에 수정함. 수정 2)
+  // double steering_angle = steer_lookup_.lookup_steer_angle(lat_acc, speed_for_lu);
+  double steering_angle = steer_lookup_.lookup_steer_angle(lat_acc, speed_now_);
 
-  steering_angle = speed_steer_scaling(steering_angle, speed_for_lu);
+  // 수정 4
+  steering_angle = speed_steer_scaling(steering_angle, speed_now_);
+
+  steering_angle = acc_scaling(steering_angle);
 
   steering_angle *= utils::clamp(1.0 + (speed_now_ / 10.0), 1.0, 1.25);
 
@@ -416,7 +449,7 @@ double MAP_Controller::calc_steering_angle(const Eigen::Vector2d& L1_point,
                            curr_steering_angle_ + threshold);
   }
 
-  const double max_steering_angle = 0.45;
+  const double max_steering_angle = 0.45; // 수정 5: 0.45 -> 0.48 rad로 max steering angle 상향 조정
   steering_angle = utils::clamp(steering_angle, -max_steering_angle, max_steering_angle);
 
   curr_steering_angle_ = steering_angle;
@@ -431,30 +464,45 @@ std::pair<Eigen::Vector2d, double> MAP_Controller::calc_L1_point(double lateral_
     idx_nearest_waypoint_ = 0;
   }
 
-  if ((waypoint_array_in_map_.rows() - idx_nearest_waypoint_.value()) > 2) {
-    curvature_waypoints_ =
-        (waypoint_array_in_map_.block(idx_nearest_waypoint_.value(), 5,
-                                      waypoint_array_in_map_.rows() - idx_nearest_waypoint_.value(), 1)
-         .cwiseAbs().mean());
+  // 수정 3: 기존 code - 최근접 웨이포인트부터 끝까지의 곡률 평균
+  // if ((waypoint_array_in_map_.rows() - idx_nearest_waypoint_.value()) > 2) {
+  //   curvature_waypoints_ =
+  //       (waypoint_array_in_map_.block(idx_nearest_waypoint_.value(), 5,
+  //                                     waypoint_array_in_map_.rows() - idx_nearest_waypoint_.value(), 1)
+  //        .cwiseAbs().mean());
+  // }
+
+  // 수정 3: 최근접 웨이포인트부터 n개까지만의 곡률 절대값 평균을 사용
+  // n = floor(speed_now_ * speed_lookahead_ * 1.25) * 10
+  // (실시간 계산)
+  {
+    const Eigen::Index start_idx = static_cast<Eigen::Index>(idx_nearest_waypoint_.value());
+    const Eigen::Index total_rows = waypoint_array_in_map_.rows();
+    const Eigen::Index remaining = std::max<Eigen::Index>(0, total_rows - start_idx);
+
+    int n = static_cast<int>(std::floor(speed_now_ * speed_lookahead_ * 1.25 * 10.0));
+    // 최소 1개, 최대 남은 행 수로 제한
+    n = std::clamp(n, 1, static_cast<int>(remaining));
+
+    if (remaining > 0 && n > 0) {
+      curvature_waypoints_ = waypoint_array_in_map_
+        .block(start_idx, 5, static_cast<Eigen::Index>(n), 1)
+        .cwiseAbs()
+        .mean();
+    } else {
+      curvature_waypoints_ = 0.0;
+    }
   }
 
   double L1_distance = q_l1_ + speed_now_ * m_l1_;
 
-  // Adjust L1 distance based on path curvature
-  double gain = 1 - 0.25 * curvature_waypoints_;
-  L1_distance *= gain;
+//   double gain = 1.0 - 0.25 * curvature_waypoints_;
+//   L1_distance *= gain;
 
   // For large lateral errors, increase L1 distance more aggressively to improve stability
-  // const double lateral_multiplier = (lateral_error > 1.0) ? 2.0 : std::sqrt(2.0);
-  // const double lower_bound = std::max(t_clip_min_, lateral_multiplier * lateral_error);
-  // L1_distance = utils::clamp(L1_distance, lower_bound, t_clip_max_);
-
-  // if (logger_info_ && lateral_error > 1.0) {
-  //   logger_info_("[MAP Controller] Large lateral error: " + std::to_string(lateral_error) +
-  //                "m, L1_distance: " + std::to_string(L1_distance) + "m");
-  //
-
-  
+  const double lateral_multiplier = (lateral_error > 1.0) ? 2.0 : std::sqrt(2.0);
+  const double lower_bound = std::max(t_clip_min_, lateral_multiplier * lateral_error);
+  L1_distance = utils::clamp(L1_distance, lower_bound, t_clip_max_);
 
 
   Eigen::Vector2d L1_point =
@@ -486,9 +534,9 @@ double MAP_Controller::distance(const Eigen::Vector2d& p1, const Eigen::Vector2d
 
 double MAP_Controller::acc_scaling(double steer) const {
   const double mean_acc = (acc_now_.size() > 0) ? acc_now_.mean() : 0.0;
-  if (mean_acc >= 1.0) {
+  if (mean_acc >= 0.8) {
     return steer * acc_scaler_for_steer_;
-  } else if (mean_acc <= -1.0) {
+  } else if (mean_acc <= -0.8) {
     return steer * dec_scaler_for_steer_;
   }
   return steer;

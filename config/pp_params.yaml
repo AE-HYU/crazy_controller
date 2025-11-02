@@ -1,0 +1,20 @@
+crazy_controller:
+  ros__parameters:
+    t_clip_min: 1.5  # Increase for more stable startup
+    t_clip_max: 5
+    m_l1: 0.3        # Reduce speed dependency for smoother startup
+    q_l1: 0.5        # Increase base lookahead distance
+    speed_lookahead: 0.25
+    lat_err_coeff: 1.0
+    # acc_scaler_for_steer_safe: 1.2
+    # dec_scaler_for_steer_safe: 0.9 
+    # acc_scaler_for_steer_aggressive: 1.1
+    acc_scaler_for_steer: 1.2
+    dec_scaler_for_steer: 0.9 
+
+    start_scale_speed: 7.0
+    end_scale_speed: 8.0
+    downscale_factor: 0.2
+
+    # increasing this to 0.20 AT MOST can make the car faster on the laptime but cut more corners
+    speed_lookahead_for_steer: 0.0 # safe/agg 0.0/0.175

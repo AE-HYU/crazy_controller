@@ -18,6 +18,12 @@ crazy_controller:
 
     speed_lookahead_for_steer: 0 # safe/agg 0/0 # increasing this to 0.20 AT MOST can make the car faster on the laptime but cut more corners
 
+    # Startup blending controls (simulation)
+    # If |profile_speed - speed_now| >= diff_threshold (m/s),
+    # apply blending: speed = deacc_gain * (speed + speed_now)
+    diff_threshold: 4.0
+    deacc_gain: 0.33
+
 
     ## Trailing Controller Parameters
     allow_accel_trailing: False
