@@ -51,6 +51,9 @@ private:
     void imu_cb(const sensor_msgs::msg::Imu::SharedPtr msg);
     void on_parameter_event(const rcl_interfaces::msg::ParameterEvent & event);
 
+    // TF update
+    bool update_position_from_tf();
+
     // Configuration parameters
     int rate_ = 40;
     std::string LUT_path_;
@@ -90,6 +93,9 @@ private:
 
     // PP controller implementation
     std::unique_ptr<crazy_controller::PP_Controller> pp_controller_;
+
+    // Timing measurement for control loop (counter-based)
+    int timing_log_counter_ = 0;
 };
 
 } // namespace crazy_controller

@@ -28,6 +28,8 @@ PP_Controller::PP_Controller(
     double end_scale_speed,
     double downscale_factor,
     double speed_lookahead_for_steer,
+    double diff_threshold,
+    double deacc_gain,
     const std::string& LUT_path,
     Logger logger_info,
     Logger logger_warn)
@@ -43,6 +45,8 @@ PP_Controller::PP_Controller(
     end_scale_speed_(end_scale_speed),
     downscale_factor_(downscale_factor),
     speed_lookahead_for_steer_(speed_lookahead_for_steer),
+    diff_threshold_(diff_threshold),
+    deacc_gain_(deacc_gain),
     LUT_path_(LUT_path),
     acc_now_(10),
     curvature_waypoints_(0.0),
@@ -88,6 +92,26 @@ PPResult PP_Controller::main_loop(
 
   if (!std::isfinite(L1_point.x()) || !std::isfinite(L1_point.y())) {
     throw std::runtime_error("L1_point is invalid");
+  }
+
+  // Startup blending: if the difference between current speed and
+  // the nearest waypoint's speed profile is >= diff_threshold_ (m/s), treat as initial rollout
+  // and blend the final commanded speed with current speed to avoid aggressive jumps.
+  if (idx_nearest_waypoint_.has_value()) {
+    const int nearest_idx = static_cast<int>(idx_nearest_waypoint_.value()); 
+    if (nearest_idx >= 0 && nearest_idx < waypoint_array_in_map_.rows()) {
+      const double profile_speed = waypoint_array_in_map_(nearest_idx, 2);
+      const double diff = std::abs(profile_speed - speed_now_);
+      if (diff >= diff_threshold_) { // configurable threshold
+        const double prev_speed = speed;
+        speed = deacc_gain_ * (speed + speed_now_); // configurable blending gain
+        if (logger_info_) logger_info_(
+          std::string("[PP Controller] Startup blend active: |profile - v| = ") +
+          std::to_string(diff) + " m/s (threshold=" + std::to_string(diff_threshold_) + ")"
+          ", gain=" + std::to_string(deacc_gain_) + ", speed " + std::to_string(prev_speed) +
+          " -> " + std::to_string(speed));
+      }
+    }
   }
 
   double steering_angle = calc_steering_angle(L1_point, L1_distance, yaw, lat_e_norm, v);
@@ -142,7 +166,7 @@ double PP_Controller::calc_steering_angle(const Eigen::Vector2d& L1_point,
     steering_angle = std::atan((2.0 * wheelbase * std::sin(eta)) / L1_distance);
   }
 
-  steering_angle = speed_steer_scaling(steering_angle, speed_for_lu);
+  steering_angle = speed_steer_scaling(steering_angle, speed_now_);
 
   steering_angle = acc_scaling(steering_angle);
 
@@ -181,11 +205,19 @@ std::pair<Eigen::Vector2d, double> PP_Controller::calc_L1_point(double lateral_e
     idx_nearest_waypoint_ = 0;
   }
 
-  if ((waypoint_array_in_map_.rows() - idx_nearest_waypoint_.value()) > 2) {
-    curvature_waypoints_ =
-        (waypoint_array_in_map_.block(idx_nearest_waypoint_.value(), 5,
-                                      waypoint_array_in_map_.rows() - idx_nearest_waypoint_.value(), 1)
-         .cwiseAbs().mean());
+  // Calculate mean curvature from nearest waypoint forward (동일: MAP과 완전히 일치)
+  if ((waypoint_array_in_map_.rows() - static_cast<Eigen::Index>(idx_nearest_waypoint_.value())) > 2) {
+    const int lookahead_idx = static_cast<int>(std::floor(speed_now_ * speed_lookahead_ * 1.25 * 10.0));
+    const Eigen::Index end_idx = std::min(
+      static_cast<Eigen::Index>(idx_nearest_waypoint_.value()) + static_cast<Eigen::Index>(lookahead_idx),
+      waypoint_array_in_map_.rows()
+    );
+    
+    curvature_waypoints_ = waypoint_array_in_map_
+      .block(static_cast<Eigen::Index>(idx_nearest_waypoint_.value()), 5, 
+             end_idx - static_cast<Eigen::Index>(idx_nearest_waypoint_.value()), 1)
+      .cwiseAbs()
+      .mean();
   }
 
   double L1_distance = q_l1_ + speed_now_ * m_l1_;
@@ -229,9 +261,9 @@ double PP_Controller::distance(const Eigen::Vector2d& p1, const Eigen::Vector2d&
 
 double PP_Controller::acc_scaling(double steer) const {
   const double mean_acc = (acc_now_.size() > 0) ? acc_now_.mean() : 0.0;
-  if (mean_acc >= 1.0) {
+  if (mean_acc >= 0.8) {
     return steer * acc_scaler_for_steer_;
-  } else if (mean_acc <= -1.0) {
+  } else if (mean_acc <= -0.8) {
     return steer * dec_scaler_for_steer_;
   }
   return steer;

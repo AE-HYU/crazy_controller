@@ -126,6 +126,8 @@ void PP_Controller_Node::init_pp_controller() {
         this->get_parameter("end_scale_speed").as_double(),
         this->get_parameter("downscale_factor").as_double(),
         this->get_parameter("speed_lookahead_for_steer").as_double(),
+        this->get_parameter("diff_threshold").as_double(),
+        this->get_parameter("deacc_gain").as_double(),
         LUT_path_,
         info, warn);
 
@@ -167,6 +169,8 @@ void PP_Controller_Node::declare_pp_dynamic_parameters_from_yaml(const std::stri
     declare_double("end_scale_speed", params["end_scale_speed"].as<double>(), fp(0.0, 10.0, 0.01));
     declare_double("downscale_factor", params["downscale_factor"].as<double>(), fp(0.0, 0.5, 0.01));
     declare_double("speed_lookahead_for_steer", params["speed_lookahead_for_steer"].as<double>(), fp(0.0, 0.2, 0.01));
+    declare_double("diff_threshold", params["diff_threshold"].as<double>(), fp(0.0, 20.0, 0.1));
+    declare_double("deacc_gain", params["deacc_gain"].as<double>(), fp(0.0, 1.0, 0.01));
 }
 
 void PP_Controller_Node::wait_for_messages() {
@@ -191,20 +195,15 @@ void PP_Controller_Node::wait_for_messages() {
             car_state_received = true;
         }
 
-        // Log waiting status every 2 seconds
-        auto elapsed = (this->get_clock()->now() - start_time).seconds();
-        if (static_cast<int>(elapsed) % 2 == 0 && elapsed > 0) {
-            RCLCPP_INFO(this->get_logger(), "Waiting... waypoints:%s, car_state:%s (%.1fs elapsed)",
-                       waypoint_array_received ? "✓" : "✗",
-                       car_state_received ? "✓" : "✗", elapsed);
-        }
-
         rclcpp::sleep_for(std::chrono::milliseconds(5));
     }
     RCLCPP_INFO(this->get_logger(), "✓ All required messages received. PP Controller ready to start!");
 }
 
 void PP_Controller_Node::control_loop() {
+    // Start timing measurement
+    auto loop_start_time = std::chrono::high_resolution_clock::now();
+    
     // Check if shutdown was requested
     if (shutdown_requested_.load()) {
         publish_stop_command();
@@ -215,6 +214,13 @@ void PP_Controller_Node::control_loop() {
         RCLCPP_ERROR_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
                               "PP controller not ready");
         return;
+    }
+
+    // Update position from TF at control loop frequency for real-time accuracy
+    if (!update_position_from_tf()) {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                              "TF lookup failed");
+        return;  // Skip this cycle if TF lookup fails
     }
 
     if (!speed_now_.has_value() || !position_in_map_.has_value() ||
@@ -236,6 +242,17 @@ void PP_Controller_Node::control_loop() {
     ack.drive.speed = speed;
 
     drive_pub_->publish(ack);
+
+    // End timing measurement and log every 5 seconds (200 cycles at 40Hz)
+    auto loop_end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(loop_end_time - loop_start_time);
+    
+    timing_log_counter_++;
+    if (timing_log_counter_ >= 200) {  // 5 seconds at 40Hz
+        RCLCPP_INFO(this->get_logger(), "[PP] Control loop execution time: %.3f ms", 
+                    duration.count() / 1000.0);
+        timing_log_counter_ = 0;
+    }
 }
 
 std::pair<double,double> PP_Controller_Node::pp_cycle() {
@@ -280,11 +297,13 @@ void PP_Controller_Node::local_waypoint_cb(const WpntArray::SharedPtr msg) {
 }
 
 void PP_Controller_Node::car_state_cb(const Odometry::SharedPtr msg) {
-    // Get velocity from odom message
+    // Only update velocity from odom message (position updated from TF in control loop)
     speed_now_ = msg->twist.twist.linear.x;
+}
 
-    // Get position and orientation from TF (map_frame_ -> base_link_frame_)
+bool PP_Controller_Node::update_position_from_tf() {
     try {
+        // Get latest available transform from map to base_link
         auto transform = tf_buffer_->lookupTransform(
             map_frame_, base_link_frame_,
             tf2::TimePointZero  // Get latest available transform
@@ -304,13 +323,18 @@ void PP_Controller_Node::car_state_cb(const Odometry::SharedPtr msg) {
         double roll, pitch, yaw;
         tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
 
+        // Update position
         Eigen::RowVector3d pose;
         pose << x, y, yaw;
         position_in_map_ = pose;
 
+        return true;
+
     } catch (const tf2::TransformException & ex) {
         RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 1000,
-                            "Could not get %s->%s transform: %s", map_frame_.c_str(), base_link_frame_.c_str(), ex.what());
+                            "Could not get %s->%s transform: %s",
+                            map_frame_.c_str(), base_link_frame_.c_str(), ex.what());
+        return false;
     }
 }
 
@@ -364,6 +388,8 @@ void PP_Controller_Node::on_parameter_event(const rcl_interfaces::msg::Parameter
     pp_controller_->set_end_scale_speed(getp("end_scale_speed"));
     pp_controller_->set_downscale_factor(getp("downscale_factor"));
     pp_controller_->set_speed_lookahead_for_steer(getp("speed_lookahead_for_steer"));
+    pp_controller_->set_diff_threshold(getp("diff_threshold"));
+    pp_controller_->set_deacc_gain(getp("deacc_gain"));
 
     RCLCPP_INFO(this->get_logger(), "Updated PP parameters");
 }

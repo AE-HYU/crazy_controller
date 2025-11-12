@@ -1,16 +1,16 @@
 crazy_controller:
   ros__parameters:
-    t_clip_min: 1.5  # Increase for more stable startup
+    t_clip_min: 1.0  # Increase for more stable startup
     t_clip_max: 5
     m_l1: 0.3        # Reduce speed dependency for smoother startup
-    q_l1: 0.5        # Increase base lookahead distance
-    speed_lookahead: 0.1
+    q_l1: 0.15        # Increase base lookahead distance
+    speed_lookahead: 0.0
     lat_err_coeff: 1.0
     # acc_scaler_for_steer_safe: 1.2
     # dec_scaler_for_steer_safe: 0.9 
     # acc_scaler_for_steer_aggressive: 1.1
-    acc_scaler_for_steer: 1.2
-    dec_scaler_for_steer: 0.9 
+    acc_scaler_for_steer: 1.0
+    dec_scaler_for_steer: 1.0
 
     start_scale_speed: 7.0
     end_scale_speed: 8.0

@@ -188,6 +188,8 @@ public:
         double end_scale_speed,
         double downscale_factor,
         double speed_lookahead_for_steer,
+        double diff_threshold,
+        double deacc_gain,
         const std::string& LUT_path,
         Logger logger_info,
         Logger logger_warn);
@@ -212,6 +214,8 @@ public:
     void set_end_scale_speed(double v) { end_scale_speed_ = v; }
     void set_downscale_factor(double v) { downscale_factor_ = v; }
     void set_speed_lookahead_for_steer(double v) { speed_lookahead_for_steer_ = v; }
+    void set_diff_threshold(double v) { diff_threshold_ = v; }
+    void set_deacc_gain(double v) { deacc_gain_ = v; }
 
 private:
     // Implementation methods
@@ -245,6 +249,8 @@ private:
     double end_scale_speed_;
     double downscale_factor_;
     double speed_lookahead_for_steer_;
+    double diff_threshold_;
+    double deacc_gain_;
     std::string LUT_path_;
 
     // State variables

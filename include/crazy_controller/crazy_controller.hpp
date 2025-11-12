@@ -93,6 +93,9 @@ private:
 
     // MAP controller
     std::unique_ptr<crazy_controller::MAP_Controller> map_controller_;
+
+    // Timing measurement for control loop (counter-based)
+    int timing_log_counter_ = 0;
 };
 
 } // namespace crazy_controller

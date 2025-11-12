@@ -22,8 +22,8 @@ crazy_controller:
     # Startup blending controls
     # If |profile_speed - speed_now| >= diff_threshold (m/s),
     # apply blending: speed = deacc_gain * (speed + speed_now)
-    diff_threshold: 4.0
-    deacc_gain: 0.3
+    diff_threshold: 3.0
+    deacc_gain: 0.4
 
     ## Acceleration Based Velocity Controller Parameters
     vel_accel_mode: False

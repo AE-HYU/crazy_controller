@@ -28,7 +28,9 @@ def generate_launch_description():
     ])
 
     pp_params_path = PythonExpression([
-        "'", FindPackageShare('crazy_controller'), "/config/pp_params.yaml'"
+        "'", FindPackageShare('crazy_controller'), "/config/pp_params_sim.yaml' if '",
+        LaunchConfiguration('mod'), "' == 'sim' else '",
+        FindPackageShare('crazy_controller'), "/config/pp_params.yaml'"
     ])
 
     lookup_table_path = PythonExpression([
@@ -44,7 +46,7 @@ def generate_launch_description():
 
     # Dynamic TF map and base_link frames based on mod
     map_frame = PythonExpression([
-        "'mcl_map' if '", LaunchConfiguration('mod'), "' == 'sim' else 'map'"
+        "'map' if '", LaunchConfiguration('mod'), "' == 'sim' else 'mcl_map'"
     ])
 
     base_link_frame = PythonExpression([

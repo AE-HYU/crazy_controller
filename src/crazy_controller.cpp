@@ -204,20 +204,15 @@ void Controller::wait_for_messages() {
             car_state_received = true;
         }
 
-        // Log waiting status every 2 seconds
-        auto elapsed = (this->get_clock()->now() - start_time).seconds();
-        if (static_cast<int>(elapsed) % 2 == 0 && elapsed > 0) {
-            RCLCPP_INFO(this->get_logger(), "Waiting... waypoints:%s, car_state:%s (%.1fs elapsed)",
-                       waypoint_array_received ? "✓" : "✗",
-                       car_state_received ? "✓" : "✗", elapsed);
-        }
-
         rclcpp::sleep_for(std::chrono::milliseconds(5));
     }
     RCLCPP_INFO(this->get_logger(), "✓ All required messages received. Controller ready to start!");
 }
 
 void Controller::control_loop() {
+    // Start timing measurement
+    auto loop_start_time = std::chrono::high_resolution_clock::now();
+    
     // Check if shutdown was requested
     if (shutdown_requested_.load()) {
         publish_stop_command();
@@ -232,11 +227,19 @@ void Controller::control_loop() {
 
     // Update position from TF at control loop frequency for real-time accuracy
     if (!update_position_from_tf()) {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                              "TF lookup failed");
         return;  // Skip this cycle if TF lookup fails
     }
 
     if (!speed_now_.has_value() || !position_in_map_.has_value() ||
         !position_in_map_frenet_.has_value() || waypoint_array_in_map_.rows() == 0) {
+        RCLCPP_WARN_THROTTLE(this->get_logger(), *this->get_clock(), 2000,
+                              "Missing data - speed: %s, position: %s, frenet: %s, waypoints: %d",
+                              speed_now_.has_value() ? "OK" : "MISSING",
+                              position_in_map_.has_value() ? "OK" : "MISSING",
+                              position_in_map_frenet_.has_value() ? "OK" : "MISSING",
+                              waypoint_array_in_map_.rows());
         return;
     }
 
@@ -254,6 +257,17 @@ void Controller::control_loop() {
     ack.drive.speed = speed;
 
     drive_pub_->publish(ack);
+
+    // End timing measurement and log every 5 seconds (200 cycles at 40Hz)
+    auto loop_end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(loop_end_time - loop_start_time);
+    
+    timing_log_counter_++;
+    if (timing_log_counter_ >= 200) {  // 5 seconds at 40Hz
+        RCLCPP_INFO(this->get_logger(), "[%s] Control loop execution time: %.3f ms", 
+                    mode_.c_str(), duration.count() / 1000.0);
+        timing_log_counter_ = 0;
+    }
 }
 
 std::pair<double,double> Controller::map_cycle() {
@@ -322,6 +336,7 @@ void Controller::car_state_cb(const Odometry::SharedPtr msg) {
     // Only update velocity from odom message
     // Position is updated in control_loop via TF for real-time accuracy
     speed_now_ = msg->twist.twist.linear.x;
+    RCLCPP_INFO_ONCE(this->get_logger(), "✓ Received odom message (speed: %.2f m/s)", speed_now_.value());
 }
 
 void Controller::car_state_frenet_cb(const Odometry::SharedPtr msg) {
@@ -329,6 +344,8 @@ void Controller::car_state_frenet_cb(const Odometry::SharedPtr msg) {
     const double d  = msg->pose.pose.position.y;
     const double vs = msg->twist.twist.linear.x;
     const double vd = msg->twist.twist.linear.y;
+
+    RCLCPP_INFO_ONCE(this->get_logger(), "✓ Received frenet odom message (s: %.2f, d: %.2f)", s, d);
 
     Eigen::Vector4d fr;
     fr << s, d, vs, vd;
