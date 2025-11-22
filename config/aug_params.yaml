@@ -24,13 +24,13 @@ crazy_controller:
     deacc_gain: 0.4      # Blending gain for startup deacceleration
 
     # Vehicle parameters for AUG controller
-    Cf: 110    # Front tire cornering stiffness [N/rad]
-    Cr: 85     # Rear tire cornering stiffness [N/rad]
+    Cf: 85.0    # Front tire cornering stiffness [N/rad]
+    Cr: 190.0    # Rear tire cornering stiffness [N/rad]
     L: 0.324   # Wheelbase [m]
     lf: 0.170  # Distance from CoG to front axle [m]
     lr: 0.154  # Distance from CoG to rear axle [m]
     m: 3.3    # Vehicle mass [kg]
 
     # Tire stiffness adjustment coefficients
-    kf: 0.0013  # Front tire stiffness coefficient
-    kr: 0.0013  # Rear tire stiffness coefficient
+    kf: 0.0015  # Front tire stiffness coefficient
+    kr: 0.0015  # Rear tire stiffness coefficient

@@ -425,11 +425,11 @@ double MAP_Controller::calc_steering_angle(const Eigen::Vector2d& L1_point,
   double steering_angle = steer_lookup_.lookup_steer_angle(lat_acc, speed_now_);
 
   // 수정 4
-  steering_angle = speed_steer_scaling(steering_angle, speed_now_);
+  // steering_angle = speed_steer_scaling(steering_angle, speed_now_);
 
-  steering_angle = acc_scaling(steering_angle);
+  // steering_angle = acc_scaling(steering_angle);
 
-  steering_angle *= utils::clamp(1.0 + (speed_now_ / 10.0), 1.0, 1.25);
+  // steering_angle *= utils::clamp(1.0 + (speed_now_ / 10.0), 1.0, 1.25);
 
   const double threshold = 0.4;
 
@@ -524,7 +524,7 @@ std::optional<double> MAP_Controller::calc_speed_command(const Eigen::Vector2d& 
       nearest_waypoint(la_position, waypoint_array_in_map_.leftCols<2>());
 
   double global_speed = waypoint_array_in_map_(idx_la_position, 2);
-  global_speed = speed_adjust_lat_err(global_speed, lat_e_norm);
+  // global_speed = speed_adjust_lat_err(global_speed, lat_e_norm);
   return global_speed;
 }
 

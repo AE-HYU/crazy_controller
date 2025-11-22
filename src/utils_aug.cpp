@@ -256,9 +256,9 @@ std::pair<Eigen::Vector2d, double> AUG_Controller::calc_L1_point(double lateral_
   double L1_distance = q_l1_ + speed_now_ * m_l1_;
 
   // Apply lateral error-based lower bound (commented out to match controller/aug.py)
-  // const double lateral_multiplier = (lateral_error > 1.0) ? 2.0 : std::sqrt(2.0);
-  // const double lower_bound = std::max(t_clip_min_, lateral_multiplier * lateral_error);
-  // L1_distance = utils::clamp(L1_distance, lower_bound, t_clip_max_);
+  const double lateral_multiplier = (lateral_error > 1.0) ? 2.0 : std::sqrt(2.0);
+  const double lower_bound = std::max(t_clip_min_, lateral_multiplier * lateral_error);
+  L1_distance = utils::clamp(L1_distance, lower_bound, t_clip_max_);
 
   // if (logger_info_ && lateral_error > 1.0) {
   //   logger_info_("[AUG Controller] Large lateral error: " + std::to_string(lateral_error) +
