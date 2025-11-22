@@ -480,7 +480,7 @@ std::pair<Eigen::Vector2d, double> MAP_Controller::calc_L1_point(double lateral_
     const Eigen::Index total_rows = waypoint_array_in_map_.rows();
     const Eigen::Index remaining = std::max<Eigen::Index>(0, total_rows - start_idx);
 
-    int n = static_cast<int>(std::floor(speed_now_ * speed_lookahead_ * 1.25 * 10.0));
+    int n = static_cast<int>(std::floor(speed_now_ * speed_lookahead_ * 1.0 * 10.0));
     // 최소 1개, 최대 남은 행 수로 제한
     n = std::clamp(n, 1, static_cast<int>(remaining));
 

@@ -1,0 +1,36 @@
+crazy_controller:
+  ros__parameters:
+    t_clip_min: 1.5  # Increase for more stable startup
+    t_clip_max: 5
+    m_l1: 0.3        # Reduce speed dependency for smoother startup
+    q_l1: 0.5        # Increase base lookahead distance
+    speed_lookahead: 0.10
+    lat_err_coeff: 1.0
+    # acc_scaler_for_steer_safe: 1.2
+    # dec_scaler_for_steer_safe: 0.9
+    # acc_scaler_for_steer_aggressive: 1.1
+    acc_scaler_for_steer: 1.2
+    dec_scaler_for_steer: 0.9
+
+    start_scale_speed: 7.0
+    end_scale_speed: 8.0
+    downscale_factor: 0.2
+
+    # increasing this to 0.20 AT MOST can make the car faster on the laptime but cut more corners
+    speed_lookahead_for_steer: 0.0 # safe/agg 0.0/0.175
+
+    # Startup blending parameters (from MAP controller)
+    diff_threshold: 3.0  # Speed difference threshold for startup blending [m/s]
+    deacc_gain: 0.4      # Blending gain for startup deacceleration
+
+    # Vehicle parameters for AUG controller
+    Cf: 110    # Front tire cornering stiffness [N/rad]
+    Cr: 85     # Rear tire cornering stiffness [N/rad]
+    L: 0.324   # Wheelbase [m]
+    lf: 0.170  # Distance from CoG to front axle [m]
+    lr: 0.154  # Distance from CoG to rear axle [m]
+    m: 3.3    # Vehicle mass [kg]
+
+    # Tire stiffness adjustment coefficients
+    kf: 0.0013  # Front tire stiffness coefficient
+    kr: 0.0013  # Rear tire stiffness coefficient

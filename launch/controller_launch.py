@@ -11,7 +11,7 @@ def generate_launch_description():
     controller_mode_arg = DeclareLaunchArgument(
         'controller_mode',
         default_value='MAP',
-        description='Mode of operation: MAP only (simplified for time trial racing)'
+        description='Mode of operation: MAP, PP, or AUG'
     )
 
     mod_arg = DeclareLaunchArgument(
@@ -31,6 +31,12 @@ def generate_launch_description():
         "'", FindPackageShare('crazy_controller'), "/config/pp_params_sim.yaml' if '",
         LaunchConfiguration('mod'), "' == 'sim' else '",
         FindPackageShare('crazy_controller'), "/config/pp_params.yaml'"
+    ])
+
+    aug_params_path = PythonExpression([
+        "'", FindPackageShare('crazy_controller'), "/config/aug_params_sim.yaml' if '",
+        LaunchConfiguration('mod'), "' == 'sim' else '",
+        FindPackageShare('crazy_controller'), "/config/aug_params.yaml'"
     ])
 
     lookup_table_path = PythonExpression([
@@ -59,8 +65,8 @@ def generate_launch_description():
         executable='controller_node',
         name='controller_manager',
         output='screen',
-        condition=UnlessCondition(
-            PythonExpression(["'", LaunchConfiguration('controller_mode'), "' == 'PP'"])
+        condition=IfCondition(
+            PythonExpression(["'", LaunchConfiguration('controller_mode'), "' == 'MAP'"])
         ),
         parameters=[{
             'mode': LaunchConfiguration('controller_mode'),
@@ -105,9 +111,36 @@ def generate_launch_description():
         ]
     )
 
+    # AUG Controller node
+    aug_controller_node = Node(
+        package='crazy_controller',
+        executable='aug_controller_node',
+        name='aug_controller_manager',
+        output='screen',
+        condition=IfCondition(
+            PythonExpression(["'", LaunchConfiguration('controller_mode'), "' == 'AUG'"])
+        ),
+        parameters=[{
+            'mode': LaunchConfiguration('controller_mode'),
+            'aug_params_path': aug_params_path,
+            'lookup_table_path': lookup_table_path,
+            'map_frame': map_frame,
+            'base_link_frame': base_link_frame,
+            'use_sim_time': PythonExpression([
+                "'true' if '", LaunchConfiguration('mod'), "' == 'sim' else 'false'"
+            ])
+        }],
+        remappings=[
+            ('/planned_path', '/planned_waypoints'),
+            ('/odom', odom_topic),
+            ('/frenet/odom', '/car_state/frenet/odom'),
+        ]
+    )
+
     return LaunchDescription([
         controller_mode_arg,
         mod_arg,
         map_controller_node,
         pp_controller_node,
+        aug_controller_node,
     ])

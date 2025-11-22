@@ -12,10 +12,10 @@
 
 namespace crazy_controller {
 
-// Pure Pursuit Controller implementation
+// AUG Controller implementation
 using Logger = std::function<void(const std::string&)>;
 
-PP_Controller::PP_Controller(
+AUG_Controller::AUG_Controller(
     double t_clip_min,
     double t_clip_max,
     double m_l1,
@@ -31,6 +31,14 @@ PP_Controller::PP_Controller(
     double diff_threshold,
     double deacc_gain,
     const std::string& LUT_path,
+    double Cf,
+    double Cr,
+    double L,
+    double lf,
+    double lr,
+    double m,
+    double kf,
+    double kr,
     Logger logger_info,
     Logger logger_warn)
   : t_clip_min_(t_clip_min),
@@ -48,17 +56,26 @@ PP_Controller::PP_Controller(
     diff_threshold_(diff_threshold),
     deacc_gain_(deacc_gain),
     LUT_path_(LUT_path),
+    Cf_(Cf),
+    Cr_(Cr),
+    L_(L),
+    lf_(lf),
+    lr_(lr),
+    m_(m),
+    kf_(kf),
+    kr_(kr),
     acc_now_(10),
     curvature_waypoints_(0.0),
     logger_info_(std::move(logger_info)),
     logger_warn_(std::move(logger_warn)),
-    curr_steering_angle_(0.0)
+    curr_steering_angle_(0.0),
+    first_steering_calculation_(true)
 {
   acc_now_.setZero();
-  // Note: Pure Pursuit does not use steering lookup table
+  // Note: AUG does not use steering lookup table
 }
 
-PPResult PP_Controller::main_loop(
+AUGResult AUG_Controller::main_loop(
     const Eigen::RowVector3d& position_in_map,
     const Eigen::MatrixXd& waypoint_array_in_map,
     double speed_now,
@@ -85,7 +102,7 @@ PPResult PP_Controller::main_loop(
     speed = 0.0;
     acceleration = 0.0;
     jerk = 0.0;
-    if (logger_warn_) logger_warn_("[PP Controller] speed was none");
+    if (logger_warn_) logger_warn_("[AUG Controller] speed was none");
   }
 
   auto [L1_point, L1_distance] = calc_L1_point(lateral_error);
@@ -94,11 +111,9 @@ PPResult PP_Controller::main_loop(
     throw std::runtime_error("L1_point is invalid");
   }
 
-  // Startup blending: if the difference between current speed and
-  // the nearest waypoint's speed profile is >= diff_threshold_ (m/s), treat as initial rollout
-  // and blend the final commanded speed with current speed to avoid aggressive jumps.
+  // Startup blending: commented out to match controller/aug.py
   if (idx_nearest_waypoint_.has_value()) {
-    const int nearest_idx = static_cast<int>(idx_nearest_waypoint_.value()); 
+    const int nearest_idx = static_cast<int>(idx_nearest_waypoint_.value());
     if (nearest_idx >= 0 && nearest_idx < waypoint_array_in_map_.rows()) {
       const double profile_speed = waypoint_array_in_map_(nearest_idx, 2);
       const double diff = std::abs(profile_speed - speed_now_);
@@ -106,7 +121,7 @@ PPResult PP_Controller::main_loop(
         const double prev_speed = speed;
         speed = deacc_gain_ * (speed + speed_now_); // configurable blending gain
         if (logger_info_) logger_info_(
-          std::string("[PP Controller] Startup blend active: |profile - v| = ") +
+          std::string("[AUG Controller] Startup blend active: |profile - v| = ") +
           std::to_string(diff) + " m/s (threshold=" + std::to_string(diff_threshold_) + ")"
           ", gain=" + std::to_string(deacc_gain_) + ", speed " + std::to_string(prev_speed) +
           " -> " + std::to_string(speed));
@@ -116,7 +131,7 @@ PPResult PP_Controller::main_loop(
 
   double steering_angle = calc_steering_angle(L1_point, L1_distance, yaw, lat_e_norm, v);
 
-  PPResult out;
+  AUGResult out;
   out.speed = speed;
   out.acceleration = acceleration;
   out.jerk = jerk;
@@ -127,13 +142,13 @@ PPResult PP_Controller::main_loop(
   return out;
 }
 
-double PP_Controller::calc_steering_angle(const Eigen::Vector2d& L1_point,
+double AUG_Controller::calc_steering_angle(const Eigen::Vector2d& L1_point,
                                            double L1_distance,
                                            double yaw,
                                            double lat_e_norm,
                                            const Eigen::Vector2d& v)
 {
-  // Pure Pursuit steering angle calculation
+  // Calculate lookahead position for speed adjustment
   const double adv_ts_st = speed_lookahead_for_steer_;
   Eigen::Vector2d la_position(
       position_in_map_(0) + v(0) * adv_ts_st,
@@ -143,46 +158,59 @@ double PP_Controller::calc_steering_angle(const Eigen::Vector2d& L1_point,
       nearest_waypoint(la_position, waypoint_array_in_map_.leftCols<2>());
 
   const double speed_la_for_lu = waypoint_array_in_map_(idx_la_steer, 2);
-  const double speed_for_lu = speed_adjust_lat_err(speed_la_for_lu, lat_e_norm);
+  // const double speed_for_lu = speed_adjust_lat_err(speed_la_for_lu, lat_e_norm);
 
+  // Calculate L1 vector
   Eigen::Vector2d L1_vector(L1_point.x() - position_in_map_(0),
                             L1_point.y() - position_in_map_(1));
+
+  // Calculate eta (angle between vehicle heading and L1 vector)
   double eta = 0.0;
   if (L1_vector.norm() == 0.0) {
-    if (logger_warn_) logger_warn_("[PP Controller] norm of L1 vector was 0, eta is set to 0");
+    if (logger_warn_) logger_warn_("[AUG Controller] norm of L1 vector was 0, eta is set to 0");
     eta = 0.0;
   } else {
     Eigen::Vector2d nvec(-std::sin(yaw), std::cos(yaw));
     eta = std::asin(nvec.dot(L1_vector) / L1_vector.norm());
   }
 
-  // Pure Pursuit steering angle formula: arctan((2 * wheelbase * sin(eta)) / L1_distance)
+  // AUG steering angle formula
   double steering_angle = 0.0;
   if (L1_distance == 0.0) {
-    if (logger_warn_) logger_warn_("[PP Controller] L1_distance is 0, steering_angle is set to 0");
+    if (logger_warn_) logger_warn_("[AUG Controller] L1_distance is 0, steering_angle is set to 0");
+    steering_angle = 0.0;
+  } else if (speed_now_ < 0.1) {
+    if (logger_warn_) logger_warn_("[AUG Controller] speed_now < 0.1 , steering_angle is set to 0");
     steering_angle = 0.0;
   } else {
-    const double wheelbase = 0.324;  // meters
-    steering_angle = std::atan((2.0 * wheelbase * std::sin(eta)) / L1_distance);
+    const double lat_acc = 2.0 * (speed_now_ * speed_now_) * std::sin(eta) / L1_distance;
+
+    // Calculate tire cornering stiffness with adjustment
+    const double Cf = Cf_ / (1.0 + kf_ * std::pow(std::abs(lat_acc), 3));
+    const double Cr = Cr_ / (1.0 + kr_ * std::pow(std::abs(lat_acc), 3));
+
+    const double K_us = m_ * ((Cr * lr_ - Cf * lf_) / (Cf * Cr * L_));
+    steering_angle = lat_acc * (L_ / (speed_now_ * speed_now_) + K_us);
   }
 
-  steering_angle = speed_steer_scaling(steering_angle, speed_now_);
+  // Apply speed-based downscaling (commented out to match controller/aug.py)
+  // steering_angle = speed_steer_scaling(steering_angle, speed_now_);
 
-  steering_angle = acc_scaling(steering_angle);
+  // Apply acceleration-based scaling (commented out to match controller/aug.py)
+  // steering_angle = acc_scaling(steering_angle);
 
-  steering_angle *= utils::clamp(1.0 + (speed_now_ / 10.0), 1.0, 1.25);
+  // Apply speed multiplier (commented out to match controller/aug.py)
+  // steering_angle *= utils::clamp(1.0 + (speed_now_ / 10.0), 1.0, 1.25);
 
+  // Apply rate limiting (0.4 rad/step) - skip on first calculation
   const double threshold = 0.4;
-
-  // Allow larger initial steering angle change to avoid startup clipping
-  static bool first_steering_calculation = true;
-  if (first_steering_calculation) {
-    first_steering_calculation = false;
-    if (logger_info_) logger_info_("[PP Controller] First steering calculation, skipping rate limiting");
+  if (first_steering_calculation_) {
+    first_steering_calculation_ = false;
+    if (logger_info_) logger_info_("[AUG Controller] First steering calculation, skipping rate limiting");
   } else if (std::abs(steering_angle - curr_steering_angle_) > threshold) {
     if (logger_info_) {
       double clamped_angle = utils::clamp(steering_angle, curr_steering_angle_ - threshold, curr_steering_angle_ + threshold);
-      logger_info_("[PP Controller] steering angle clipped: " + std::to_string(steering_angle) +
+      logger_info_("[AUG Controller] steering angle clipped: " + std::to_string(steering_angle) +
                    " -> " + std::to_string(clamped_angle));
     }
     steering_angle = utils::clamp(steering_angle,
@@ -190,6 +218,7 @@ double PP_Controller::calc_steering_angle(const Eigen::Vector2d& L1_point,
                            curr_steering_angle_ + threshold);
   }
 
+  // Apply hard limits
   const double max_steering_angle = 0.45;
   steering_angle = utils::clamp(steering_angle, -max_steering_angle, max_steering_angle);
 
@@ -197,7 +226,8 @@ double PP_Controller::calc_steering_angle(const Eigen::Vector2d& L1_point,
   return steering_angle;
 }
 
-std::pair<Eigen::Vector2d, double> PP_Controller::calc_L1_point(double lateral_error) {
+std::pair<Eigen::Vector2d, double> AUG_Controller::calc_L1_point(double lateral_error) {
+  // Find nearest waypoint
   idx_nearest_waypoint_ =
       nearest_waypoint(position_in_map_.head<2>(), waypoint_array_in_map_.leftCols<2>());
 
@@ -222,18 +252,20 @@ std::pair<Eigen::Vector2d, double> PP_Controller::calc_L1_point(double lateral_e
     }
   }
 
+  // Calculate adaptive L1 distance
   double L1_distance = q_l1_ + speed_now_ * m_l1_;
 
-  // For large lateral errors, increase L1 distance more aggressively to improve stability
-  const double lateral_multiplier = (lateral_error > 1.0) ? 2.0 : std::sqrt(2.0);
-  const double lower_bound = std::max(t_clip_min_, lateral_multiplier * lateral_error);
-  L1_distance = utils::clamp(L1_distance, lower_bound, t_clip_max_);
+  // Apply lateral error-based lower bound (commented out to match controller/aug.py)
+  // const double lateral_multiplier = (lateral_error > 1.0) ? 2.0 : std::sqrt(2.0);
+  // const double lower_bound = std::max(t_clip_min_, lateral_multiplier * lateral_error);
+  // L1_distance = utils::clamp(L1_distance, lower_bound, t_clip_max_);
 
-  if (logger_info_ && lateral_error > 1.0) {
-    logger_info_("[PP Controller] Large lateral error: " + std::to_string(lateral_error) +
-                 "m, L1_distance: " + std::to_string(L1_distance) + "m");
-  }
+  // if (logger_info_ && lateral_error > 1.0) {
+  //   logger_info_("[AUG Controller] Large lateral error: " + std::to_string(lateral_error) +
+  //                "m, L1_distance: " + std::to_string(L1_distance) + "m");
+  // }
 
+  // Get waypoint at L1 distance ahead
   Eigen::Vector2d L1_point =
       waypoint_at_distance_before_car(L1_distance,
                                       waypoint_array_in_map_.leftCols<2>(),
@@ -241,63 +273,72 @@ std::pair<Eigen::Vector2d, double> PP_Controller::calc_L1_point(double lateral_e
   return {L1_point, L1_distance};
 }
 
-std::optional<double> PP_Controller::calc_speed_command(const Eigen::Vector2d& v,
+std::optional<double> AUG_Controller::calc_speed_command(const Eigen::Vector2d& v,
                                                          double lat_e_norm)
 {
+  // Calculate lookahead position
   const double adv_ts_sp = speed_lookahead_;
   Eigen::Vector2d la_position(
       position_in_map_(0) + v(0) * adv_ts_sp,
       position_in_map_(1) + v(1) * adv_ts_sp);
 
+  // Find nearest waypoint to lookahead position
   const int idx_la_position =
       nearest_waypoint(la_position, waypoint_array_in_map_.leftCols<2>());
 
+  // Get global speed from waypoint
   double global_speed = waypoint_array_in_map_(idx_la_position, 2);
-  global_speed = speed_adjust_lat_err(global_speed, lat_e_norm);
+
+  // Adjust speed based on lateral error (commented out to match controller/aug.py)
+  // global_speed = speed_adjust_lat_err(global_speed, lat_e_norm);
+
   return global_speed;
 }
 
-double PP_Controller::distance(const Eigen::Vector2d& p1, const Eigen::Vector2d& p2) {
+double AUG_Controller::distance(const Eigen::Vector2d& p1, const Eigen::Vector2d& p2) {
   return (p2 - p1).norm();
 }
 
-double PP_Controller::acc_scaling(double steer) const {
-  const double mean_acc = (acc_now_.size() > 0) ? acc_now_.mean() : 0.0;
-  if (mean_acc >= 0.8) {
-    return steer * acc_scaler_for_steer_;
-  } else if (mean_acc <= -0.8) {
-    return steer * dec_scaler_for_steer_;
-  }
-  return steer;
-}
+// Acceleration scaling (commented out to match controller/aug.py)
+// double AUG_Controller::acc_scaling(double steer) const {
+//   const double mean_acc = (acc_now_.size() > 0) ? acc_now_.mean() : 0.0;
+//   if (mean_acc >= 0.8) {
+//     return steer * acc_scaler_for_steer_;
+//   } else if (mean_acc <= -0.8) {
+//     return steer * dec_scaler_for_steer_;
+//   }
+//   return steer;
+// }
 
-double PP_Controller::speed_steer_scaling(double steer, double speed) const {
-  const double speed_diff = std::max(0.1, end_scale_speed_ - start_scale_speed_);
-  const double factor = 1.0 - utils::clamp((speed - start_scale_speed_) / speed_diff, 0.0, 1.0) * downscale_factor_;
-  return steer * factor;
-}
+// Speed-based steering scaling (commented out to match controller/aug.py)
+// double AUG_Controller::speed_steer_scaling(double steer, double speed) const {
+//   const double speed_diff = std::max(0.1, end_scale_speed_ - start_scale_speed_);
+//   const double factor = 1.0 - utils::clamp((speed - start_scale_speed_) / speed_diff, 0.0, 1.0) * downscale_factor_;
+//   return steer * factor;
+// }
 
-std::pair<double,double> PP_Controller::calc_lateral_error_norm() const {
+std::pair<double,double> AUG_Controller::calc_lateral_error_norm() const {
   const double lateral_error = std::abs(position_in_map_frenet_(1));
 
-  // Increase max lateral error to handle off-raceline starts
-  const double max_lat_e = 2.0;  // Increased from 0.5 to 2.0 meters
+  // Clip to [0, 2] meters and normalize to [0, 0.5]
+  const double max_lat_e = 2.0;
   const double min_lat_e = 0.0;
   const double lat_e_clip = utils::clamp(lateral_error, min_lat_e, max_lat_e);
   const double lat_e_norm = 0.5 * ((lat_e_clip - min_lat_e) / (max_lat_e - min_lat_e));
   return {lat_e_norm, lateral_error};
 }
 
-double PP_Controller::speed_adjust_lat_err(double global_speed, double lat_e_norm) const {
-  double lat_e_coeff = lat_err_coeff_;
-  lat_e_norm *= 2.0;
+// Speed adjustment based on lateral error (commented out to match controller/aug.py)
+// double AUG_Controller::speed_adjust_lat_err(double global_speed, double lat_e_norm) const {
+//   double lat_e_coeff = lat_err_coeff_;
+//   lat_e_norm *= 2.0;
+//
+//   const double curv = utils::clamp(2.0 * ( (curvature_waypoints_) / 0.8 ) - 2.0, 0.0, 1.0);
+//   global_speed *= (1.0 - lat_e_coeff + lat_e_coeff * std::exp(-lat_e_norm * curv));
+//   return global_speed;
+// }
 
-  const double curv = utils::clamp(2.0 * ( (curvature_waypoints_) / 0.8 ) - 2.0, 0.0, 1.0);
-  global_speed *= (1.0 - lat_e_coeff + lat_e_coeff * std::exp(-lat_e_norm * curv));
-  return global_speed;
-}
-
-int PP_Controller::nearest_waypoint(const Eigen::Vector2d& position,
+int AUG_Controller::nearest_waypoint(const Eigen::Vector2d& position,
                                      const Eigen::MatrixXd& waypoints_xy) const
 {
   const Eigen::Index N = waypoints_xy.rows();
@@ -315,7 +356,7 @@ int PP_Controller::nearest_waypoint(const Eigen::Vector2d& position,
   return best_idx;
 }
 
-Eigen::Vector2d PP_Controller::waypoint_at_distance_before_car(double distance,
+Eigen::Vector2d AUG_Controller::waypoint_at_distance_before_car(double distance,
                                                                 const Eigen::MatrixXd& waypoints_xy,
                                                                 int idx_waypoint_behind_car) const
 {
@@ -327,6 +368,19 @@ Eigen::Vector2d PP_Controller::waypoint_at_distance_before_car(double distance,
   const int idx = std::min<int>(static_cast<int>(waypoints_xy.rows()) - 1,
                                 idx_waypoint_behind_car + d_index);
   return waypoints_xy.row(idx).transpose();
+}
+
+// Dummy implementations for commented-out methods to satisfy header
+double AUG_Controller::acc_scaling(double steer) const {
+  return steer;  // No-op when commented out
+}
+
+double AUG_Controller::speed_steer_scaling(double steer, double speed) const {
+  return steer;  // No-op when commented out
+}
+
+double AUG_Controller::speed_adjust_lat_err(double global_speed, double lat_e_norm) const {
+  return global_speed;  // No-op when commented out
 }
 
 } // namespace crazy_controller

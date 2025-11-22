@@ -10,4 +10,8 @@ ros2 launch crazy_controller controller_launch.py mod:=real controller_mode:=MAP
 
 # PP:
 ros2 launch crazy_controller controller_launch.py mod:=sim controller_mode:=PP
+
+# AUG:
+ros2 launch crazy_controller controller_launch.py mod:=sim controller_mode:=AUG
+
 ```
