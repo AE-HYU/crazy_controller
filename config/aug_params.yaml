@@ -3,7 +3,7 @@ crazy_controller:
     t_clip_min: 1.5  # Increase for more stable startup
     t_clip_max: 5
     m_l1: 0.3        # Reduce speed dependency for smoother startup
-    q_l1: 0.5        # Increase base lookahead distance
+    q_l1: 0.4        # Increase base lookahead distance
     speed_lookahead: 0.10
     lat_err_coeff: 0.25
 

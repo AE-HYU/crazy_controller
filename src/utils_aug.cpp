@@ -194,13 +194,13 @@ double AUG_Controller::calc_steering_angle(const Eigen::Vector2d& L1_point,
   }
 
   // Apply speed-based downscaling (commented out to match controller/aug.py)
-  steering_angle = speed_steer_scaling(steering_angle, speed_now_);
+  // steering_angle = speed_steer_scaling(steering_angle, speed_now_);
 
   // Apply acceleration-based scaling (commented out to match controller/aug.py)
-  steering_angle = acc_scaling(steering_angle);
+  // steering_angle = acc_scaling(steering_angle);
 
   // Apply speed multiplier (commented out to match controller/aug.py)
-  steering_angle *= utils::clamp(1.0 + (speed_now_ / 10.0), 1.0, 1.25);
+  steering_angle *= utils::clamp(1.0 + (speed_now_ / 10.0), 1.0, 1.50);
 
   // Apply rate limiting (0.4 rad/step) - skip on first calculation
   const double threshold = 0.4;
