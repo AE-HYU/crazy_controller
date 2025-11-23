@@ -5,10 +5,8 @@ crazy_controller:
     m_l1: 0.3        # Reduce speed dependency for smoother startup
     q_l1: 0.5        # Increase base lookahead distance
     speed_lookahead: 0.10
-    lat_err_coeff: 1.0
-    # acc_scaler_for_steer_safe: 1.2
-    # dec_scaler_for_steer_safe: 0.9
-    # acc_scaler_for_steer_aggressive: 1.1
+    lat_err_coeff: 0.25
+
     acc_scaler_for_steer: 1.2
     dec_scaler_for_steer: 0.9
 
@@ -24,13 +22,13 @@ crazy_controller:
     deacc_gain: 0.4      # Blending gain for startup deacceleration
 
     # Vehicle parameters for AUG controller
-    Cf: 85.0    # Front tire cornering stiffness [N/rad]
-    Cr: 190.0    # Rear tire cornering stiffness [N/rad]
+    Cf: 80.0    # Front tire cornering stiffness [N/rad]
+    Cr: 195.0    # Rear tire cornering stiffness [N/rad]
     L: 0.324   # Wheelbase [m]
     lf: 0.170  # Distance from CoG to front axle [m]
     lr: 0.154  # Distance from CoG to rear axle [m]
     m: 3.3    # Vehicle mass [kg]
 
     # Tire stiffness adjustment coefficients
-    kf: 0.0015  # Front tire stiffness coefficient
-    kr: 0.0015  # Rear tire stiffness coefficient
+    kf: 0.0018
+    kr: 0.0018

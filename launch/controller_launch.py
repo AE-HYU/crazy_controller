@@ -52,7 +52,7 @@ def generate_launch_description():
 
     # Dynamic TF map and base_link frames based on mod
     map_frame = PythonExpression([
-        "'map' if '", LaunchConfiguration('mod'), "' == 'sim' else 'mcl_map'"
+        "'map' if '", LaunchConfiguration('mod'), "' == 'sim' else 'map'"
     ])
 
     base_link_frame = PythonExpression([

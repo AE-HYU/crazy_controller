@@ -157,7 +157,7 @@ double AUG_Controller::calc_steering_angle(const Eigen::Vector2d& L1_point,
   const int idx_la_steer =
       nearest_waypoint(la_position, waypoint_array_in_map_.leftCols<2>());
 
-  const double speed_la_for_lu = waypoint_array_in_map_(idx_la_steer, 2);
+  // const double speed_la_for_lu = waypoint_array_in_map_(idx_la_steer, 2);
   // const double speed_for_lu = speed_adjust_lat_err(speed_la_for_lu, lat_e_norm);
 
   // Calculate L1 vector
@@ -194,13 +194,13 @@ double AUG_Controller::calc_steering_angle(const Eigen::Vector2d& L1_point,
   }
 
   // Apply speed-based downscaling (commented out to match controller/aug.py)
-  // steering_angle = speed_steer_scaling(steering_angle, speed_now_);
+  steering_angle = speed_steer_scaling(steering_angle, speed_now_);
 
   // Apply acceleration-based scaling (commented out to match controller/aug.py)
-  // steering_angle = acc_scaling(steering_angle);
+  steering_angle = acc_scaling(steering_angle);
 
   // Apply speed multiplier (commented out to match controller/aug.py)
-  // steering_angle *= utils::clamp(1.0 + (speed_now_ / 10.0), 1.0, 1.25);
+  steering_angle *= utils::clamp(1.0 + (speed_now_ / 10.0), 1.0, 1.25);
 
   // Apply rate limiting (0.4 rad/step) - skip on first calculation
   const double threshold = 0.4;
@@ -290,7 +290,7 @@ std::optional<double> AUG_Controller::calc_speed_command(const Eigen::Vector2d& 
   double global_speed = waypoint_array_in_map_(idx_la_position, 2);
 
   // Adjust speed based on lateral error (commented out to match controller/aug.py)
-  // global_speed = speed_adjust_lat_err(global_speed, lat_e_norm);
+  global_speed = speed_adjust_lat_err(global_speed, lat_e_norm);
 
   return global_speed;
 }
@@ -300,22 +300,22 @@ double AUG_Controller::distance(const Eigen::Vector2d& p1, const Eigen::Vector2d
 }
 
 // Acceleration scaling (commented out to match controller/aug.py)
-// double AUG_Controller::acc_scaling(double steer) const {
-//   const double mean_acc = (acc_now_.size() > 0) ? acc_now_.mean() : 0.0;
-//   if (mean_acc >= 0.8) {
-//     return steer * acc_scaler_for_steer_;
-//   } else if (mean_acc <= -0.8) {
-//     return steer * dec_scaler_for_steer_;
-//   }
-//   return steer;
-// }
+double AUG_Controller::acc_scaling(double steer) const {
+  const double mean_acc = (acc_now_.size() > 0) ? acc_now_.mean() : 0.0;
+  if (mean_acc >= 0.8) {
+    return steer * acc_scaler_for_steer_;
+  } else if (mean_acc <= -0.8) {
+    return steer * dec_scaler_for_steer_;
+  }
+  return steer;
+}
 
 // Speed-based steering scaling (commented out to match controller/aug.py)
-// double AUG_Controller::speed_steer_scaling(double steer, double speed) const {
-//   const double speed_diff = std::max(0.1, end_scale_speed_ - start_scale_speed_);
-//   const double factor = 1.0 - utils::clamp((speed - start_scale_speed_) / speed_diff, 0.0, 1.0) * downscale_factor_;
-//   return steer * factor;
-// }
+double AUG_Controller::speed_steer_scaling(double steer, double speed) const {
+  const double speed_diff = std::max(0.1, end_scale_speed_ - start_scale_speed_);
+  const double factor = 1.0 - utils::clamp((speed - start_scale_speed_) / speed_diff, 0.0, 1.0) * downscale_factor_;
+  return steer * factor;
+}
 
 std::pair<double,double> AUG_Controller::calc_lateral_error_norm() const {
   const double lateral_error = std::abs(position_in_map_frenet_(1));
@@ -329,14 +329,14 @@ std::pair<double,double> AUG_Controller::calc_lateral_error_norm() const {
 }
 
 // Speed adjustment based on lateral error (commented out to match controller/aug.py)
-// double AUG_Controller::speed_adjust_lat_err(double global_speed, double lat_e_norm) const {
-//   double lat_e_coeff = lat_err_coeff_;
-//   lat_e_norm *= 2.0;
-//
-//   const double curv = utils::clamp(2.0 * ( (curvature_waypoints_) / 0.8 ) - 2.0, 0.0, 1.0);
-//   global_speed *= (1.0 - lat_e_coeff + lat_e_coeff * std::exp(-lat_e_norm * curv));
-//   return global_speed;
-// }
+double AUG_Controller::speed_adjust_lat_err(double global_speed, double lat_e_norm) const {
+  double lat_e_coeff = lat_err_coeff_;
+  lat_e_norm *= 2.0;
+
+  const double curv = utils::clamp(2.0 * ( (curvature_waypoints_) / 0.8 ) - 1.0, 0.0, 1.0);
+  global_speed *= (1.0 - lat_e_coeff + lat_e_coeff * std::exp(-lat_e_norm * curv));
+  return global_speed;
+}
 
 int AUG_Controller::nearest_waypoint(const Eigen::Vector2d& position,
                                      const Eigen::MatrixXd& waypoints_xy) const
@@ -368,19 +368,6 @@ Eigen::Vector2d AUG_Controller::waypoint_at_distance_before_car(double distance,
   const int idx = std::min<int>(static_cast<int>(waypoints_xy.rows()) - 1,
                                 idx_waypoint_behind_car + d_index);
   return waypoints_xy.row(idx).transpose();
-}
-
-// Dummy implementations for commented-out methods to satisfy header
-double AUG_Controller::acc_scaling(double steer) const {
-  return steer;  // No-op when commented out
-}
-
-double AUG_Controller::speed_steer_scaling(double steer, double speed) const {
-  return steer;  // No-op when commented out
-}
-
-double AUG_Controller::speed_adjust_lat_err(double global_speed, double lat_e_norm) const {
-  return global_speed;  // No-op when commented out
 }
 
 } // namespace crazy_controller
