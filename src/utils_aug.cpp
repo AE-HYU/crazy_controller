@@ -237,8 +237,10 @@ std::pair<Eigen::Vector2d, double> AUG_Controller::calc_L1_point(double lateral_
 
   // Calculate mean curvature from nearest waypoint forward (동일: MAP과 완전히 일치)
   if ((waypoint_array_in_map_.rows() - static_cast<Eigen::Index>(idx_nearest_waypoint_.value())) > 2) {
-    const int lookahead_idx = static_cast<int>(std::floor(speed_now_ * speed_lookahead_ * 1.0 * 10.0));
-    const Eigen::Index end_idx = std::min(
+  // Use speed_now_ to determine lookahead index (floor of speed); ensure at least 1
+    int lookahead_idx = static_cast<int>(std::floor(speed_now_));
+    if (lookahead_idx < 1) lookahead_idx = 1;
+      const Eigen::Index end_idx = std::min(
       static_cast<Eigen::Index>(idx_nearest_waypoint_.value()) + static_cast<Eigen::Index>(lookahead_idx),
       waypoint_array_in_map_.rows()
     );
@@ -254,6 +256,15 @@ std::pair<Eigen::Vector2d, double> AUG_Controller::calc_L1_point(double lateral_
 
   // Calculate adaptive L1 distance
   double L1_distance = q_l1_ + speed_now_ * m_l1_;
+
+  // Reduce L1_distance based on mean curvature ahead (curvature_waypoints_)
+  // Use linear mapping: mult = -1.25 * curv + 1.5, then clamp to [0.5, 1.0]
+  {
+    const double curv = curvature_waypoints_;
+    double mult = -1.67 * curv + 1.5;
+    mult = utils::clamp(mult, 0.5, 1.0);
+    L1_distance *= mult;
+  }
 
   // Apply lateral error-based lower bound (commented out to match controller/aug.py)
   const double lateral_multiplier = (lateral_error > 1.0) ? 2.0 : std::sqrt(2.0);

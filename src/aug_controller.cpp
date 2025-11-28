@@ -59,6 +59,7 @@ bool AUG_Controller_Node::initialize() {
 
     // Initialize publishers
     drive_pub_ = this->create_publisher<AckermannDriveStamped>("/drive", 10);
+    l1_point_pub_ = this->create_publisher<visualization_msgs::msg::Marker>("/l1_point", 10);
 
     // Initialize AUG controller
     RCLCPP_INFO(this->get_logger(), "Initializing AUG controller");
@@ -288,6 +289,36 @@ std::pair<double,double> AUG_Controller_Node::aug_cycle() {
         speed_now_.value(),
         Eigen::Vector2d(position_in_map_frenet_.value()(0), position_in_map_frenet_.value()(1)),
         acc_now_);
+
+    // Publish L1 point visualization
+    visualization_msgs::msg::Marker marker;
+    marker.header.frame_id = map_frame_;
+    marker.header.stamp = this->get_clock()->now();
+    marker.ns = "l1_point";
+    marker.id = 0;
+    marker.type = visualization_msgs::msg::Marker::SPHERE;
+    marker.action = visualization_msgs::msg::Marker::ADD;
+
+    // Set L1 point position
+    marker.pose.position.x = res.L1_point.x();
+    marker.pose.position.y = res.L1_point.y();
+    marker.pose.position.z = 0.0;
+    marker.pose.orientation.w = 1.0;
+
+    // Set marker scale (size)
+    marker.scale.x = 0.3;
+    marker.scale.y = 0.3;
+    marker.scale.z = 0.3;
+
+    // Set marker color (blue)
+    marker.color.r = 0.0f;
+    marker.color.g = 0.0f;
+    marker.color.b = 1.0f;
+    marker.color.a = 1.0f;
+
+    marker.lifetime = rclcpp::Duration::from_seconds(0.2);
+
+    l1_point_pub_->publish(marker);
 
     waypoint_safety_counter_ += 1;
     if (waypoint_safety_counter_ >= rate_ * 5) {  // 5 second timeout

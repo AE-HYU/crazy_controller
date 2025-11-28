@@ -23,6 +23,7 @@
   <depend>tf2_geometry_msgs</depend>
   <depend>yaml-cpp</depend>
   <depend>tf2_ros</depend>
+  <depend>visualization_msgs</depend>
 
 
   <!-- Eigen3 CMake 모듈/패키지 (환경에 따라 eigen 또는 eigen3_cmake_module가 필요할 수 있음) -->

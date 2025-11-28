@@ -9,6 +9,7 @@
 #include <tf2_ros/buffer.h>
 #include <tf2_ros/transform_listener.h>
 #include <geometry_msgs/msg/transform_stamped.hpp>
+#include <visualization_msgs/msg/marker.hpp>
 
 #include <Eigen/Dense>
 #include <optional>
@@ -63,6 +64,7 @@ private:
 
     // ROS publishers and subscribers
     rclcpp::Publisher<ackermann_msgs::msg::AckermannDriveStamped>::SharedPtr drive_pub_;
+    rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr l1_point_pub_;
     rclcpp::Subscription<ae_hyu_msgs::msg::WpntArray>::SharedPtr sub_local_waypoints_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_car_state_;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr sub_car_state_frenet_;
