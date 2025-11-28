@@ -257,12 +257,10 @@ std::pair<Eigen::Vector2d, double> AUG_Controller::calc_L1_point(double lateral_
   // Calculate adaptive L1 distance
   double L1_distance = q_l1_ + speed_now_ * m_l1_;
 
-  // Reduce L1_distance based on mean curvature ahead (curvature_waypoints_)
-  // Use linear mapping: mult = -1.25 * curv + 1.5, then clamp to [0.5, 1.0]
   {
     const double curv = curvature_waypoints_;
-    double mult = -1.67 * curv + 1.5;
-    mult = utils::clamp(mult, 0.5, 1.0);
+    double mult = -1.0 * curv + 1.25;
+    mult = utils::clamp(mult, 0.6, 1.0);
     L1_distance *= mult;
   }
 
